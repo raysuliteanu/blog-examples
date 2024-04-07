@@ -1,3 +1,6 @@
+use log::info;
+
 fn main() {
-    println!("Hello, world!");
+    log4rs::init_file("log_config.yaml", Default::default()).unwrap();
+    info!("Hello, world!");
 }

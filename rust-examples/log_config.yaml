@@ -1,0 +1,9 @@
+appenders:
+  console:
+    kind: console
+    encoder:
+      pattern: "{d(%+)(local)} [{t}] {h({l})} {M}:{m}{n}"
+
+root:
+  appenders:
+    - console
