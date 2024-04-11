@@ -54,11 +54,31 @@ fn handle_events() -> io::Result<bool> {
 }
 
 fn ui(frame: &mut Frame) {
-    let main_window = frame.size();
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(1),
+            Constraint::Length(3),
+        ])
+        .split(frame.size());
 
-    frame.render_widget(
-        Block::new().borders(Borders::all())
-            .title_style(Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD))
-            .title("Something"),
-        main_window);
+    let header_block = Block::new()
+        .borders(Borders::all())
+        .title_style(Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD))
+        .title("Will be the file name");
+    frame.render_widget(header_block, chunks[0]);
+
+    let main_content = Block::new()
+        .borders(Borders::LEFT | Borders::RIGHT);
+    frame.render_widget(main_content, chunks[1]);
+    
+    let footer_block = Block::new()
+        .borders(Borders::all());
+
+    let footer_paragraph = Paragraph::new(Text::styled("will be key commands", Style::default()))
+        .centered()
+        .block(footer_block);
+
+    frame.render_widget(footer_paragraph, chunks[2]);
 }
