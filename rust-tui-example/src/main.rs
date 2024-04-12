@@ -106,41 +106,29 @@ fn ui(frame: &mut Frame, file_data: &mut FileData) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),
             Constraint::Min(1),
             Constraint::Length(3),
         ])
         .split(frame.size());
 
-    let header_block = Block::new()
+    let title_style = Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD);
+    let main_content_block = Block::new()
         .borders(Borders::all())
-        .title_style(Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD))
-        .title("File Viewer");
-
-    let file_name = ratatui::text::Line::from(file_data.path.clone())
-        .style(Style::default().fg(Color::Blue));
-    let header_content = Paragraph::new(file_name)
-        .centered()
-        .block(header_block);
-    frame.render_widget(header_content, chunks[0]);
-
-    let main_content_block = Block::new().borders(Borders::LEFT | Borders::RIGHT);
-
-    let text : Vec<Line>= file_data.data.iter()
+        .padding(Padding::new(1,1,1,1))
+        .title(file_data.path.clone())
+        .title_style(title_style);
+    let main_content_text: Vec<Line>= file_data.data.iter()
         .map(|line| { Line::from(line.to_string())})
         .collect();
-
-    let main_content = Paragraph::new(text)
+    let main_content = Paragraph::new(main_content_text)
         .block(main_content_block)
         .wrap(Wrap { trim: false });
-    frame.render_widget(main_content, chunks[1]);
+    frame.render_widget(main_content, chunks[0]);
 
-    let footer_block = Block::new()
-        .borders(Borders::all());
-
-    let footer_paragraph = Paragraph::new(Text::styled("will be key commands", Style::default()))
+    let footer_block = Block::new().borders(Borders::all());
+    let footer_paragraph = Paragraph::new(Text::styled("will be commands and metadata", Style::default()))
         .centered()
         .block(footer_block);
 
-    frame.render_widget(footer_paragraph, chunks[2]);
+    frame.render_widget(footer_paragraph, chunks[1]);
 }
