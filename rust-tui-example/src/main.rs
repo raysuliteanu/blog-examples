@@ -16,6 +16,8 @@ use ratatui::backend::CrosstermBackend;
 struct FileData {
     path: String,
     data: Vec<String>,
+    vertical_scroll: usize,
+    horizontal_scroll: usize,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -49,6 +51,8 @@ fn get_file_data(args: Vec<String>) -> Result<FileData, Box<dyn Error>> {
             Ok(FileData {
                 path: file_path.display().to_string(),
                 data,
+                vertical_scroll: 0,
+                horizontal_scroll: 0,
             })
         } else {
             panic!("file does not exist or cannot be read")
@@ -103,13 +107,15 @@ fn handle_events() -> io::Result<bool> {
 }
 
 fn ui(frame: &mut Frame, file_data: &mut FileData) {
+    let area = frame.size();
+    
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(1),
             Constraint::Length(3),
         ])
-        .split(frame.size());
+        .split(area);
 
     let title_style = Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD);
     let main_content_block = Block::new()
@@ -121,9 +127,23 @@ fn ui(frame: &mut Frame, file_data: &mut FileData) {
         .map(|line| { Line::from(line.to_string())})
         .collect();
     let main_content = Paragraph::new(main_content_text)
+        .scroll((file_data.vertical_scroll as u16, file_data.horizontal_scroll as u16))
         .block(main_content_block)
-        .wrap(Wrap { trim: false });
+        .wrap(Wrap { trim: false }); // trim: false preserves indenting i.e. no strip whitespace
     frame.render_widget(main_content, chunks[0]);
+
+    let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
+    let mut scrollbar_state = ScrollbarState::new(file_data.data.len())
+        .position(file_data.vertical_scroll);
+    frame.render_stateful_widget(
+        scrollbar,
+        area.inner(&Margin {
+            // using an inner vertical margin of 1 unit makes the scrollbar inside the block
+            vertical: 1,
+            horizontal: 0,
+        }),
+        &mut scrollbar_state,
+    );
 
     let footer_block = Block::new().borders(Borders::all());
     let footer_paragraph = Paragraph::new(Text::styled("will be commands and metadata", Style::default()))
