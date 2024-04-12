@@ -47,7 +47,7 @@ fn get_file_data(args: Vec<String>) -> Result<FileData, Box<dyn Error>> {
                 .collect::<Vec<String>>();
 
             Ok(FileData {
-                path: file_path.file_name().unwrap().to_str().unwrap().to_string(),
+                path: file_path.display().to_string(),
                 data,
             })
         } else {
