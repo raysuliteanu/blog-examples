@@ -44,7 +44,6 @@ fn get_file_data<'a>(args: Vec<String>) -> Result<FileData<'a>, Box<dyn Error>> 
 
         if file_path.exists() && file_path.is_file() {
             let contents = std::fs::read_to_string(file_path).expect("could not read file");
-            println!("read {} characters", contents.len());
             let data = contents.split('\n')
                 .map(|line| { text::Line::from(line.to_string()) })
                 .collect::<Vec<Line>>();
@@ -70,7 +69,7 @@ fn run(mut terminal: Terminal<CrosstermBackend<Stdout>>, file_data: &mut FileDat
     let mut should_quit = false;
     while !should_quit {
         terminal.draw(|frame| ui(frame, file_data))?;
-        should_quit = handle_events()?;
+        should_quit = handle_events(file_data)?;
     }
 
     Ok(())
@@ -99,14 +98,37 @@ fn restore_terminal() -> io::Result<()> {
     Ok(())
 }
 
-fn handle_events() -> io::Result<bool> {
+fn handle_events(file_data: &mut FileData) -> io::Result<bool> {
     if event::poll(Duration::from_millis(50))? {
         if let Event::Key(key) = event::read()? {
-            if key.kind == event::KeyEventKind::Press && key.code == KeyCode::Char('q') {
-                return Ok(true);
+            if key.kind == event::KeyEventKind::Press {
+                match key.code {
+                    KeyCode::Up => {
+                        file_data.vertical_scroll = file_data.vertical_scroll.saturating_sub(1);
+                        file_data.vertical_scroll_state = file_data.vertical_scroll_state.position(file_data.vertical_scroll);
+                    }
+                    KeyCode::Down => {
+                        file_data.vertical_scroll = file_data.vertical_scroll.saturating_add(1);
+                        file_data.vertical_scroll_state = file_data.vertical_scroll_state.position(file_data.vertical_scroll);
+                    }
+                    KeyCode::Home => {
+                        file_data.vertical_scroll = 0;
+                        file_data.vertical_scroll_state = file_data.vertical_scroll_state.position(file_data.vertical_scroll);
+                    }
+                    KeyCode::End => {}
+                    KeyCode::PageUp => {}
+                    KeyCode::PageDown => {}
+                    KeyCode::Char('q') | KeyCode::Esc => {
+                        return Ok(true);
+                    }
+                    _ => {
+                        return Ok(false);
+                    }
+                }
             }
         }
     }
+    
     Ok(false)
 }
 
