@@ -1,22 +1,26 @@
+use std::{fs, io};
 use std::default::Default;
 use std::env::args;
 use std::error::Error;
-use std::io;
+use std::fs::Metadata;
 use std::io::{stdout, Stdout};
 use std::panic::{set_hook, take_hook};
 use std::path::Path;
 use std::time::Duration;
 
+use chrono::{DateTime, Local};
 use crossterm::{event, ExecutableCommand};
 use crossterm::event::{Event, KeyCode};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::{Frame, Terminal};
 use ratatui::{prelude::*, widgets::*};
 use ratatui::backend::CrosstermBackend;
+use ratatui::layout::Flex;
 
 struct FileData<'a> {
     path: String,
     data: Vec<Line<'a>>,
+    metadata: Metadata,
     vertical_scroll: usize,
     vertical_scroll_state: ScrollbarState,
 }
@@ -43,15 +47,18 @@ fn get_file_data<'a>(args: Vec<String>) -> Result<FileData<'a>, Box<dyn Error>> 
         let file_path = Path::new(path.as_str());
 
         if file_path.exists() && file_path.is_file() {
-            let contents = std::fs::read_to_string(file_path).expect("could not read file");
+            let contents = fs::read_to_string(file_path)?;
             let data = contents.split('\n')
                 .map(|line| { text::Line::from(line.to_string()) })
                 .collect::<Vec<Line>>();
             let vertical_scroll = 0;
             let vertical_scroll_state = ScrollbarState::new(data.len()).position(vertical_scroll);
+
+            let metadata = file_path.metadata().unwrap();
             Ok(FileData {
                 path: file_path.display().to_string(),
                 data,
+                metadata,
                 vertical_scroll,
                 vertical_scroll_state,
             })
@@ -115,7 +122,10 @@ fn handle_events(file_data: &mut FileData) -> io::Result<bool> {
                         file_data.vertical_scroll = 0;
                         file_data.vertical_scroll_state = file_data.vertical_scroll_state.position(file_data.vertical_scroll);
                     }
-                    KeyCode::End => {}
+                    KeyCode::End => {
+                        file_data.vertical_scroll = file_data.data.len();
+                        file_data.vertical_scroll_state = file_data.vertical_scroll_state.position(file_data.vertical_scroll);
+                    }
                     KeyCode::PageUp => {}
                     KeyCode::PageDown => {}
                     KeyCode::Char('q') | KeyCode::Esc => {
@@ -128,13 +138,13 @@ fn handle_events(file_data: &mut FileData) -> io::Result<bool> {
             }
         }
     }
-    
+
     Ok(false)
 }
 
 fn ui(frame: &mut Frame, file_data: &mut FileData) {
     let area = frame.size();
-    
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -142,13 +152,14 @@ fn ui(frame: &mut Frame, file_data: &mut FileData) {
             Constraint::Length(3),
         ])
         .split(area);
-    
-    let title_style = Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD);
+
+    let style_blue_bold = Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD);
+
     let main_content_block = Block::new()
         .borders(Borders::all())
         .padding(Padding::new(1, 1, 1, 1))
         .title(file_data.path.clone())
-        .title_style(title_style);
+        .title_style(style_blue_bold);
     let main_content_text: Vec<Line> = file_data.data.iter()
         .map(|line| { Line::from(line.to_string()) })
         .collect();
@@ -161,18 +172,31 @@ fn ui(frame: &mut Frame, file_data: &mut FileData) {
     let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
     frame.render_stateful_widget(
         scrollbar,
-        chunks[0].inner(&Margin {
+        chunks[0].inner(
             // using an inner vertical margin of 1 unit makes the scrollbar inside the block
-            vertical: 1,
-            horizontal: 0,
-        }),
+            &Margin { vertical: 1, horizontal: 0 }
+        ),
         &mut file_data.vertical_scroll_state,
     );
 
-    let footer_block = Block::new().borders(Borders::all());
-    let footer_paragraph = Paragraph::new(Text::styled("will be commands and metadata", Style::default()))
-        .centered()
-        .block(footer_block);
+    let footer_layout = Layout::default()
+        .flex(Flex::SpaceBetween)
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
+        .split(chunks[1]);
 
-    frame.render_widget(footer_paragraph, chunks[1]);
+    let footer_commands = Text::from("↑ ↓ <Home> <End>");
+    let footer_commands_paragraph = Paragraph::new(footer_commands)
+        .style(style_blue_bold)
+        .left_aligned();
+    frame.render_widget(footer_commands_paragraph, footer_layout[0]);
+
+    let system_time = file_data.metadata.created().unwrap();
+    let local_time: DateTime<Local> = system_time.into();
+    let file_details = format!("Created: {} Length: {}", local_time.format("%d-%m-%Y %H:%M"), file_data.metadata.len());
+    let footer_metadata = Text::from(file_details);
+    let footer_metadata_paragraph = Paragraph::new(footer_metadata)
+        .style(style_blue_bold)
+        .right_aligned();
+    frame.render_widget(footer_metadata_paragraph, footer_layout[1]);
 }
