@@ -158,10 +158,7 @@ fn ui(frame: &mut Frame, file_data: &mut FileData) {
         .padding(Padding::new(1, 1, 1, 1))
         .title(file_data.path.clone())
         .title_style(style_blue_bold);
-    let main_content_text: Vec<Line> = file_data.data.iter()
-        .map(|line| { Line::from(line.to_string()) })
-        .collect();
-    let main_content = Paragraph::new(main_content_text)
+    let main_content = Paragraph::new(file_data.data.clone()) // todo: this clone() isn't great
         .scroll((file_data.vertical_scroll as u16, 0))
         .block(main_content_block)
         .wrap(Wrap { trim: false }); // 'trim: false' preserves indenting i.e. no strip whitespace
