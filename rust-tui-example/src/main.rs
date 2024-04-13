@@ -126,8 +126,6 @@ fn handle_events(file_data: &mut FileData) -> io::Result<bool> {
                         file_data.vertical_scroll = file_data.data.len();
                         file_data.vertical_scroll_state = file_data.vertical_scroll_state.position(file_data.vertical_scroll);
                     }
-                    KeyCode::PageUp => {}
-                    KeyCode::PageDown => {}
                     KeyCode::Char('q') | KeyCode::Esc => {
                         return Ok(true);
                     }
