@@ -1,21 +1,25 @@
-use std::{fs, io};
-use std::default::Default;
+mod tui;
+
 use std::env::args;
 use std::error::Error;
+use std::fs;
 use std::fs::Metadata;
-use std::io::{stdout, Stdout};
-use std::panic::{set_hook, take_hook};
 use std::path::Path;
-use std::time::Duration;
 
 use chrono::{DateTime, Local};
-use crossterm::{event, ExecutableCommand};
-use crossterm::event::{Event, KeyCode};
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
-use ratatui::{Frame, Terminal};
-use ratatui::{prelude::*, widgets::*};
-use ratatui::backend::CrosstermBackend;
-use ratatui::layout::Flex;
+use crossterm::event::KeyCode;
+use ratatui::{Frame, text};
+use ratatui::layout::{Constraint, Direction, Flex, Layout, Margin};
+use ratatui::prelude::{Color, Line, Modifier, Style, Text};
+use ratatui::widgets::{Block, Borders, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap};
+
+enum Action {
+    ScrollUp,
+    ScrollDown,
+    Home,
+    End,
+    Quit,
+}
 
 struct FileData<'a> {
     path: String,
@@ -23,20 +27,40 @@ struct FileData<'a> {
     metadata: Metadata,
     vertical_scroll: usize,
     vertical_scroll_state: ScrollbarState,
+    quit: bool,
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = args().collect();
 
     let mut file_data = get_file_data(args)?;
 
-    init_panic_hook();
+    let mut tui = tui::Tui::new()?
+        .tick_rate(4.0) // 4 ticks per second
+        .frame_rate(30.0); // 30 frames per second
 
-    let terminal = setup_terminal()?;
+    tui.enter()?; // Starts event handler, enters raw mode, enters alternate screen
 
-    run(terminal, &mut file_data)?;
+    loop {
 
-    restore_terminal()?;
+        tui.draw(|f| { // Deref allows calling `tui.terminal.draw`
+            ui(f, &mut file_data);
+        })?;
+
+        if let Some(evt) = tui.next().await { // `tui.next().await` blocks till next event
+            let mut maybe_action = handle_event(evt);
+            while let Some(action) = maybe_action {
+                maybe_action = update(action, &mut file_data);
+            }
+        };
+
+        if file_data.quit {
+            break;
+        }
+    }
+
+    tui.exit()?; // stops event handler, exits raw mode, exits alternate screen
 
     Ok(())
 }
@@ -61,6 +85,7 @@ fn get_file_data<'a>(args: Vec<String>) -> Result<FileData<'a>, Box<dyn Error>> 
                 metadata,
                 vertical_scroll,
                 vertical_scroll_state,
+                quit: false,
             })
         } else {
             // todo: return Error
@@ -72,73 +97,57 @@ fn get_file_data<'a>(args: Vec<String>) -> Result<FileData<'a>, Box<dyn Error>> 
     }
 }
 
-fn run(mut terminal: Terminal<CrosstermBackend<Stdout>>, file_data: &mut FileData) -> Result<(), Box<dyn Error>> {
-    let mut should_quit = false;
-    while !should_quit {
-        terminal.draw(|frame| ui(frame, file_data))?;
-        should_quit = handle_events(file_data)?;
+fn update(action: Action, file_data: &mut FileData) -> Option<Action> {
+    match action {
+        Action::ScrollUp => {
+            file_data.vertical_scroll = file_data.vertical_scroll.saturating_sub(1);
+            file_data.vertical_scroll_state = file_data.vertical_scroll_state.position(file_data.vertical_scroll);
+        }
+        Action::ScrollDown => {
+            file_data.vertical_scroll = file_data.vertical_scroll.saturating_add(1);
+            file_data.vertical_scroll_state = file_data.vertical_scroll_state.position(file_data.vertical_scroll);
+        }
+        Action::Home => {
+            file_data.vertical_scroll = 0;
+            file_data.vertical_scroll_state = file_data.vertical_scroll_state.position(file_data.vertical_scroll);
+        }
+        Action::End => {
+            file_data.vertical_scroll = file_data.data.len();
+            file_data.vertical_scroll_state = file_data.vertical_scroll_state.position(file_data.vertical_scroll);
+        }
+        Action::Quit => {
+            file_data.quit = true;
+        }
     }
-
-    Ok(())
+    None
 }
 
-fn setup_terminal() -> Result<Terminal<CrosstermBackend<Stdout>>, Box<dyn Error>> {
-    enable_raw_mode()?;
-    stdout().execute(EnterAlternateScreen)?;
-    let terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
-
-    Ok(terminal)
-}
-
-fn init_panic_hook() {
-    let original_hook = take_hook();
-    set_hook(Box::new(move |panic_info| {
-        // intentionally ignore errors here since we're already in a panic
-        let _ = restore_terminal();
-        original_hook(panic_info);
-    }));
-}
-
-fn restore_terminal() -> io::Result<()> {
-    disable_raw_mode()?;
-    stdout().execute(LeaveAlternateScreen)?;
-    Ok(())
-}
-
-fn handle_events(file_data: &mut FileData) -> io::Result<bool> {
-    if event::poll(Duration::from_millis(50))? {
-        if let Event::Key(key) = event::read()? {
-            if key.kind == event::KeyEventKind::Press {
-                match key.code {
-                    KeyCode::Up => {
-                        file_data.vertical_scroll = file_data.vertical_scroll.saturating_sub(1);
-                        file_data.vertical_scroll_state = file_data.vertical_scroll_state.position(file_data.vertical_scroll);
-                    }
-                    KeyCode::Down => {
-                        file_data.vertical_scroll = file_data.vertical_scroll.saturating_add(1);
-                        file_data.vertical_scroll_state = file_data.vertical_scroll_state.position(file_data.vertical_scroll);
-                    }
-                    KeyCode::Home => {
-                        file_data.vertical_scroll = 0;
-                        file_data.vertical_scroll_state = file_data.vertical_scroll_state.position(file_data.vertical_scroll);
-                    }
-                    KeyCode::End => {
-                        file_data.vertical_scroll = file_data.data.len();
-                        file_data.vertical_scroll_state = file_data.vertical_scroll_state.position(file_data.vertical_scroll);
-                    }
-                    KeyCode::Char('q') | KeyCode::Esc => {
-                        return Ok(true);
-                    }
-                    _ => {
-                        return Ok(false);
-                    }
-                }
+fn handle_event(event: tui::Event) -> Option<Action> {
+    if let tui::Event::Key(key) = event {
+        return match key.code {
+            KeyCode::Up => {
+                Some(Action::ScrollUp)
+            }
+            KeyCode::Down => {
+                Some(Action::ScrollDown)
+            }
+            KeyCode::Home => {
+                Some(Action::Home)
+            }
+            KeyCode::End => {
+                Some(Action::End)
+            }
+            KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => {
+                Some(Action::Quit)
+            }
+            _ => {
+                None
             }
         }
     }
-
-    Ok(false)
+    None
 }
+
 
 fn ui(frame: &mut Frame, file_data: &mut FileData) {
     let area = frame.size();
