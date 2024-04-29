@@ -9,6 +9,7 @@
 plugins {
     // Apply the application plugin to add support for building a CLI application in Java.
     id 'application'
+    id 'java'
 }
 
 repositories {
@@ -35,10 +36,11 @@ testing {
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(21)
+        vendor = JvmVendorSpec.AMAZON
     }
 }
 
 application {
     // Define the main class for the application.
-    mainClass = 'org.example.App'
+    mainClass = 'org.kidoni.Fortune'
 }
