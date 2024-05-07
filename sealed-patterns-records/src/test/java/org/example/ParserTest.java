@@ -4,6 +4,7 @@ import java.io.ByteArrayInputStream;
 
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
@@ -31,5 +32,7 @@ class ParserTest {
         if (expression instanceof Expr.ExecutableExpr expr) {
             assertInstanceOf(Op.AddOp.class, expr.op());
         }
+
+        assertEquals("1 + 1", expression.toString());
     }
 }
