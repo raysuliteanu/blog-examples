@@ -40,12 +40,12 @@ public class Parser {
                 case '*' -> new Op.MulOp(left, right);
                 case '/' -> new Op.DivOp(left, right);
                 case '%' -> new Op.ModOp(left, right);
-                default -> throw new ParseException("Unknown operator: " + op);
+                default -> throw new ParseException("unknown operator: " + op);
             };
 
             executableStatement = ExecutableStatement.of(new Expr.ExecutableExpr(opExpr));
         }
-        catch (IOException | ParseException e) {
+        catch (NumberFormatException | IOException | ParseException e) {
             executableStatement = ExecutableStatement.of(new Expr.InvalidExpr(e.getMessage()));
         }
 
@@ -77,6 +77,10 @@ public class Parser {
             }
         }
 
+        if (buffer.isEmpty()) {
+            throw new ParseException("constant missing");
+        }
+
         return new Expr.ConstExpr(Integer.parseInt(buffer.toString()));
     }
 
@@ -89,7 +93,7 @@ public class Parser {
             case '%':
                 break;
             default:
-                throw new ParseException("parse error: token: " + (char) token);
+                throw new ParseException("unexpected token: " + (char) token);
         }
     }
 
@@ -107,7 +111,7 @@ public class Parser {
 
     private void checkEndOfInput(final int token) {
         if (token == -1) {
-            throw new ParseException("parse error: unexpected end of input");
+            throw new ParseException("unexpected end of input");
         }
     }
 }

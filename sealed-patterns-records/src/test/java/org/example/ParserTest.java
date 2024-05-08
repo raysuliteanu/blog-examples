@@ -115,4 +115,15 @@ class ParserTest {
 
         assertEquals("1 % 1", expression.toString());
     }
+
+    @Test
+    void invalidExpressions() {
+        var invalidExpressions = new String[]{"123", "123+", "+123", "123-", "-123", "123*", "*123", "123/", "/123", "123%", "%123", "1.23", "1.23 + 4.56"};
+        for (var invalidExpression : invalidExpressions) {
+            var executableStatement = new Parser(new ByteArrayInputStream(invalidExpression.getBytes())).parse();
+            assertNotNull(executableStatement);
+            var expression = executableStatement.getExpression();
+            assertInstanceOf(Expr.InvalidExpr.class, expression);
+        }
+    }
 }
