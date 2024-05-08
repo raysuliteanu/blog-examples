@@ -15,6 +15,10 @@ public sealed interface Expr {
         }
     }
 
-    record InvalidExpr() implements Expr {
+    record InvalidExpr(String message) implements Expr {
+        @Override
+        public String toString() {
+            return message();
+        }
     }
 }

@@ -18,7 +18,7 @@ class ParserTest {
 
     @Test
     void parseSimpleAdditionExpression() {
-        var executableStatement = new Parser(new ByteArrayInputStream("1+1".getBytes())).parse();
+        var executableStatement = new Parser(new ByteArrayInputStream("123+456".getBytes())).parse();
         assertNotNull(executableStatement);
 
         var expression = executableStatement.getExpression();
@@ -26,13 +26,93 @@ class ParserTest {
             assertInstanceOf(Op.AddOp.class, expr.op());
         }
 
-        executableStatement = new Parser(new ByteArrayInputStream(" 1  +  1 ".getBytes())).parse();
+        executableStatement = new Parser(new ByteArrayInputStream(" 123  +  456 ".getBytes())).parse();
         assertNotNull(executableStatement);
         expression = executableStatement.getExpression();
         if (expression instanceof Expr.ExecutableExpr expr) {
             assertInstanceOf(Op.AddOp.class, expr.op());
         }
 
-        assertEquals("1 + 1", expression.toString());
+        assertEquals("123 + 456", expression.toString());
+    }
+
+    @Test
+    void parseSimpleSubtractionExpression() {
+        var executableStatement = new Parser(new ByteArrayInputStream("1-1".getBytes())).parse();
+        assertNotNull(executableStatement);
+
+        var expression = executableStatement.getExpression();
+        if (expression instanceof Expr.ExecutableExpr expr) {
+            assertInstanceOf(Op.SubOp.class, expr.op());
+        }
+
+        executableStatement = new Parser(new ByteArrayInputStream(" 1  -  1 ".getBytes())).parse();
+        assertNotNull(executableStatement);
+        expression = executableStatement.getExpression();
+        if (expression instanceof Expr.ExecutableExpr expr) {
+            assertInstanceOf(Op.SubOp.class, expr.op());
+        }
+
+        assertEquals("1 - 1", expression.toString());
+    }
+
+    @Test
+    void parseSimpleMultiplicationExpression() {
+        var executableStatement = new Parser(new ByteArrayInputStream("1*1".getBytes())).parse();
+        assertNotNull(executableStatement);
+
+        var expression = executableStatement.getExpression();
+        if (expression instanceof Expr.ExecutableExpr expr) {
+            assertInstanceOf(Op.MulOp.class, expr.op());
+        }
+
+        executableStatement = new Parser(new ByteArrayInputStream(" 1  *  1 ".getBytes())).parse();
+        assertNotNull(executableStatement);
+        expression = executableStatement.getExpression();
+        if (expression instanceof Expr.ExecutableExpr expr) {
+            assertInstanceOf(Op.MulOp.class, expr.op());
+        }
+
+        assertEquals("1 * 1", expression.toString());
+    }
+
+    @Test
+    void parseSimpleDivisionExpression() {
+        var executableStatement = new Parser(new ByteArrayInputStream("1/1".getBytes())).parse();
+        assertNotNull(executableStatement);
+
+        var expression = executableStatement.getExpression();
+        if (expression instanceof Expr.ExecutableExpr expr) {
+            assertInstanceOf(Op.DivOp.class, expr.op());
+        }
+
+        executableStatement = new Parser(new ByteArrayInputStream(" 1  /  1 ".getBytes())).parse();
+        assertNotNull(executableStatement);
+        expression = executableStatement.getExpression();
+        if (expression instanceof Expr.ExecutableExpr expr) {
+            assertInstanceOf(Op.DivOp.class, expr.op());
+        }
+
+        assertEquals("1 / 1", expression.toString());
+    }
+
+    @Test
+    void parseSimpleModulusExpression() {
+        var executableStatement = new Parser(new ByteArrayInputStream("1%1".getBytes())).parse();
+        assertNotNull(executableStatement);
+
+        var expression = executableStatement.getExpression();
+        if (expression instanceof Expr.ExecutableExpr expr) {
+            assertInstanceOf(Op.ModOp.class, expr.op());
+        }
+
+        executableStatement = new Parser(new ByteArrayInputStream(" 1  %  1 ".getBytes())).parse();
+        assertNotNull(executableStatement);
+        expression = executableStatement.getExpression();
+        if (expression instanceof Expr.ExecutableExpr expr) {
+            assertInstanceOf(Op.ModOp.class, expr.op());
+        }
+
+        assertEquals("1 % 1", expression.toString());
     }
 }

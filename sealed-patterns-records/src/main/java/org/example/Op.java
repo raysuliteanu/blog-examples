@@ -35,11 +35,4 @@ public sealed interface Op {
             return left + " % " + right;
         }
     }
-
-    record NegOp(Expr expr) implements Op {
-        @Override
-        public String toString() {
-            return "-" + expr;
-        }
-    }
 }
