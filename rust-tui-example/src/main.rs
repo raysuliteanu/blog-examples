@@ -1,5 +1,3 @@
-mod tui;
-
 use std::env::args;
 use std::error::Error;
 use std::fs;
@@ -8,10 +6,12 @@ use std::path::Path;
 
 use chrono::{DateTime, Local};
 use crossterm::event::KeyCode;
-use ratatui::{Frame, text};
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Flex, Layout, Margin};
-use ratatui::prelude::{Color, Line, Modifier, Style, Text};
+use ratatui::prelude::{Color, Modifier, Style, Text};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap};
+
+mod tui;
 
 enum Action {
     ScrollUp,
@@ -21,9 +21,9 @@ enum Action {
     Quit,
 }
 
-struct FileData<'a> {
+struct FileData {
     path: String,
-    data: Vec<Line<'a>>,
+    data: Vec<String>,
     metadata: Metadata,
     vertical_scroll: usize,
     vertical_scroll_state: ScrollbarState,
@@ -65,7 +65,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn get_file_data<'a>(args: Vec<String>) -> Result<FileData<'a>, Box<dyn Error>> {
+fn get_file_data(args: Vec<String>) -> Result<FileData, Box<dyn Error>> {
     if args.len() == 2 && !args[1].is_empty() {
         let path = args[1].clone();
         let file_path = Path::new(path.as_str());
@@ -73,8 +73,8 @@ fn get_file_data<'a>(args: Vec<String>) -> Result<FileData<'a>, Box<dyn Error>> 
         if file_path.exists() && file_path.is_file() {
             let contents = fs::read_to_string(file_path)?;
             let data = contents.split('\n')
-                .map(|line| { text::Line::from(line.to_string()) })
-                .collect::<Vec<Line>>();
+                .map(|line| { line.to_string() })
+                .collect::<Vec<_>>();
             let vertical_scroll = 0;
             let vertical_scroll_state = ScrollbarState::new(data.len()).position(vertical_scroll);
 
@@ -167,7 +167,7 @@ fn ui(frame: &mut Frame, file_data: &mut FileData) {
         .padding(Padding::new(1, 1, 1, 1))
         .title(file_data.path.clone())
         .title_style(style_blue_bold);
-    let main_content = Paragraph::new(file_data.data.clone()) // todo: this clone() isn't great
+    let main_content = Paragraph::new(file_data.data.join("\n"))
         .scroll((file_data.vertical_scroll as u16, 0))
         .block(main_content_block)
         .wrap(Wrap { trim: false }); // 'trim: false' preserves indenting i.e. no strip whitespace
