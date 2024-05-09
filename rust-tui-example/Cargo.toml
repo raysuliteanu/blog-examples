@@ -8,13 +8,13 @@ edition = "2021"
 [dependencies]
 color-eyre = "0.6.3"
 futures = "0.3.30"
-serde = { version = "1.0.197", features = ["derive"] }
-serde_derive = "1.0.197"
+serde = { version = "1.0.201", features = ["derive"] }
+serde_derive = "1.0.201"
 tokio = { version = "1.37.0", features = ["time", "macros", "rt"] }
-tokio-util = { version = "0.7.10", features = ["rt"] }
+tokio-util = { version = "0.7.11", features = ["rt"] }
 signal-hook = "0.3.17"
 clap = "4.5.4"
 log = "0.4.21"
-chrono = "0.4.37"
+chrono = "0.4.38"
 crossterm = { version = "0.27.0", features = ["serde", "event-stream"] }
 ratatui = "0.26.1"
