@@ -13,7 +13,7 @@ use tokio::task_local;
 
 const CR_LF: &str = "\r\n";
 const HTTP11_PROTOCOL_STR: &str = "HTTP/1.1";
-const LOCALHOST: &'static str = "127.0.0.1";
+const LOCALHOST: &str = "127.0.0.1";
 const READ_BUFFER_SIZE: usize = 4096;
 
 pub struct HttpStatusCode {
@@ -65,15 +65,21 @@ impl MediaType {
     pub const APPLICATION_OCTET_STREAM: MediaType = MediaType("application/octet-stream");
 }
 
-impl Into<&'static str> for MediaType {
-    fn into(self) -> &'static str {
-        self.0
-    }
-}
-
 impl Display for MediaType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl From<MediaType> for &str {
+    fn from(value: MediaType) -> Self {
+        value.0
+    }
+}
+
+impl From<&str> for MediaType {
+    fn from(value: &str) -> Self {
+        MediaType::from_str(value).unwrap()
     }
 }
 
@@ -164,15 +170,15 @@ fn get_command_line_opts() -> (Option<&'static str>, u16) {
 }
 
 fn get_directory(dir_opt: Option<String>) -> Option<&'static str> {
-    if dir_opt.is_some() {
-        Some(Box::new(dir_opt.unwrap()).leak())
+    if let Some(dir) = dir_opt {
+        Some(Box::new(dir).leak())
     } else {
         None
     }
 }
 
 fn get_port(port_opt: Option<u16>) -> u16 {
-    port_opt.or_else(|| { Some(4221) }).unwrap()
+    port_opt.unwrap_or(4221)
 }
 
 async fn process_request(stream: &mut TcpStream) -> io::Result<()> {
@@ -181,12 +187,9 @@ async fn process_request(stream: &mut TcpStream) -> io::Result<()> {
     read_stream(stream, &mut buf).await?;
 
     let lines = std::str::from_utf8(&buf)
-        .and_then(|s| {
-            Ok(s.split(CR_LF))
-        })
-        .and_then(|t| {
-            Ok(t.collect_vec())
-        }).unwrap();
+        .map(|s| s.split(CR_LF))
+        .map(|t| t.collect_vec())
+        .unwrap();
 
     if let (Some(method), resource_path) = parse_method_line(lines.first().unwrap()) {
         let remaining_lines = lines[1..].to_vec();
@@ -209,7 +212,7 @@ async fn process_request(stream: &mut TcpStream) -> io::Result<()> {
                     "echo" => handle_echo(stream, remaining_path_parts.as_bytes()).await?,
                     "user-agent" => {
                         if let Some(user_agent_header) = find_header(&headers, "User-Agent") {
-                            handle_echo(stream, &user_agent_header.value.as_bytes()).await?
+                            handle_echo(stream, user_agent_header.value.as_bytes()).await?
                         } else {
                             handle_not_found(stream).await?
                         }
@@ -244,7 +247,7 @@ async fn handle_files(stream: &mut TcpStream, filename: &str) -> io::Result<()> 
 
     build_response_body(&mut buffer, &contents[..]);
 
-    stream.write(&buffer).await?;
+    let _ = stream.write(&buffer).await?;
 
     Ok(())
 }
@@ -283,7 +286,7 @@ async fn read_stream(stream: &mut TcpStream, buf: &mut Vec<u8>) -> io::Result<()
                 break;
             }
             Err(e) => {
-                return Err(e.into());
+                return Err(e);
             }
         }
     }
@@ -293,11 +296,8 @@ async fn read_stream(stream: &mut TcpStream, buf: &mut Vec<u8>) -> io::Result<()
     Ok(())
 }
 
-fn find_header<'a>(headers: &'a Vec<HttpHeader>, name: &'static str) -> Option<&'a HttpHeader<'a>> {
+fn find_header<'a>(headers: &'a [HttpHeader], name: &'static str) -> Option<&'a HttpHeader<'a>> {
     headers.iter().find(|h| h.name == name)
-        .map(|t| {
-            t
-        })
 }
 
 // path could be "" or "/" or "/foo" or "/foo/bar/baz"
@@ -333,7 +333,7 @@ async fn handle_not_found(stream: &mut TcpStream) -> io::Result<()> {
     let content_length: HttpHeader = HttpHeader::new("Content-Length", "0");
     build_headers(&mut buffer, vec![&content_length]);
 
-    stream.write(&buffer).await?;
+    let _ = stream.write(&buffer).await?;
 
     Ok(())
 }
@@ -345,7 +345,7 @@ async fn handle_not_implemented(stream: &mut TcpStream) -> io::Result<()> {
     let content_length: HttpHeader = HttpHeader::new("Content-Length", "0");
     build_headers(&mut buffer, vec![&content_length]);
 
-    stream.write(&buffer).await?;
+    let _ = stream.write(&buffer).await?;
 
     Ok(())
 }
@@ -359,7 +359,7 @@ async fn handle_static_content(stream: &mut TcpStream, _path: &str) -> io::Resul
 
     build_response_body(&mut buffer, "".as_bytes());
 
-    stream.write(&buffer).await?;
+    let _ = stream.write(&buffer).await?;
 
     Ok(())
 }
@@ -377,7 +377,7 @@ async fn handle_echo<'a>(stream: &mut TcpStream, body: &[u8]) -> io::Result<()> 
 
     build_response_body(&mut buffer, body);
 
-    stream.write(&buffer).await?;
+    let _ = stream.write(&buffer).await?;
 
     Ok(())
 }
