@@ -2,17 +2,10 @@ use std::io::{Stdout, Write};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct InitMessage {
+struct InitRequestMessage {
     src: String,
     dest: String,
-    body: InitBody,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-enum InitBody {
-    Request(InitRequestBody),
-    Response(InitResponseBody),
+    body: InitRequestBody,
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
@@ -23,6 +16,13 @@ struct InitRequestBody {
     msg_id: u32,
     node_id: String,
     node_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct InitResponseMessage {
+    src: String,
+    dest: String,
+    body: InitResponseBody,
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
@@ -57,31 +57,26 @@ fn main() {
     let mut reader = serde_json::Deserializer::from_reader(stdin);
 
     let (reply_to, node_name, msg_id) =
-        if let Ok(init) = InitMessage::deserialize(&mut reader).map_err(|e| dbg!(e)) {
-            match init.body {
-                InitBody::Request(i) => {
-                    assert_eq!("init", i.msg_type);
-                    (init.src, i.node_id, i.msg_id)
-                }
-                InitBody::Response(_) => {
-                    panic!("init protocol failure: expected 'init' got 'init_ok'")
-                }
-            }
+        if let Ok(init) = InitRequestMessage::deserialize(&mut reader)
+            .map(|t| dbg!(t))
+            .map_err(|e| dbg!(e)) {
+            assert_eq!("init", init.body.msg_type);
+            (init.src, init.body.node_id, init.body.msg_id)
         } else {
             // failed deserializing init request
-            todo!()
+            panic!("invalid init message");
         };
 
-    let init_resp = InitMessage {
+    let init_resp = InitResponseMessage {
         src: node_name.clone(),
         dest: reply_to,
-        body: InitBody::Response(InitResponseBody {
+        body: InitResponseBody {
             msg_type: String::from("init_ok"),
             in_reply_to: msg_id,
-        }),
+        },
     };
 
-    write_serializable(stdout, init_resp);
+    write_serializable(stdout, dbg!(init_resp));
 
     let mut id = 1u32;
 
