@@ -56,20 +56,21 @@ fn main() {
     let stdin = &mut std::io::stdin();
     let mut reader = serde_json::Deserializer::from_reader(stdin);
 
-    let (reply_to, node_name, msg_id) = if let Ok(init) = InitMessage::deserialize(&mut reader).map_err(|e| dbg!(e)) {
-        match init.body {
-            InitBody::Request(i) => {
-                assert_eq!("init", i.msg_type);
-                (init.src, i.node_id, i.msg_id)
+    let (reply_to, node_name, msg_id) =
+        if let Ok(init) = InitMessage::deserialize(&mut reader).map_err(|e| dbg!(e)) {
+            match init.body {
+                InitBody::Request(i) => {
+                    assert_eq!("init", i.msg_type);
+                    (init.src, i.node_id, i.msg_id)
+                }
+                InitBody::Response(_) => {
+                    panic!("init protocol failure: expected 'init' got 'init_ok'")
+                }
             }
-            InitBody::Response(_) => {
-                panic!("init protocol failure: expected 'init' got 'init_ok'")
-            }
-        }
-    } else {
-        // failed deserializing init request
-        todo!()
-    };
+        } else {
+            // failed deserializing init request
+            todo!()
+        };
 
     let init_resp = InitMessage {
         src: node_name.clone(),
@@ -80,11 +81,7 @@ fn main() {
         }),
     };
 
-    let _ = serde_json::to_string(&init_resp)
-        .and_then(|s| {
-            write_response_message(stdout, s);
-            Ok(())
-        });
+    write_serializable(stdout, init_resp);
 
     let mut id = 1u32;
 
@@ -101,19 +98,15 @@ fn main() {
                 },
             };
 
-            let _ = serde_json::to_string(&repl)
-                .and_then(|s| {
-                    write_response_message(stdout, s);
-                    Ok(())
-                });
+            write_serializable(stdout, repl);
 
             id += 1;
         }
     }
 }
 
-fn write_response_message(mut stdout: &Stdout, resp: String) {
-    let res = serde_json::to_writer(stdout, &resp);
+fn write_serializable(mut stdout: &Stdout, mesg: impl Serialize) {
+    let res = serde_json::to_writer(stdout, &mesg);
     let _ = stdout.flush();
     if let Some(write_error) = res.err() {
         eprintln!("{write_error}");
