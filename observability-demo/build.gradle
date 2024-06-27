@@ -7,13 +7,13 @@ plugins {
 	id 'observability-project.java-conventions'
 }
 
-group = 'com.ksw'
+group = 'org.ksw'
 version = '0.0.1-SNAPSHOT'
 
 java {
 	toolchain {
 		languageVersion = JavaLanguageVersion.of(21)
-		vendor = JvmVendorSpec.AMAZON
+		vendor = JvmVendorSpec.ADOPTIUM
 	}
 	sourceCompatibility = '21'
 }
@@ -45,4 +45,3 @@ generateJava {
 	packageName = 'com.ksw.observability.demo.codegen'
 	generateClient = true
 }
-
