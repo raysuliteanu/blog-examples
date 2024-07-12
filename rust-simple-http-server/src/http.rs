@@ -174,7 +174,8 @@ fn read_headers(buffer: &[u8]) -> IResult<&[u8], Vec<HttpHeader>> {
 fn parse_header(input: &[u8]) -> IResult<&[u8], HttpHeader> {
     let match_header_name = take_while1(|b| is_alphabetic(b) || b == b'-');
     let match_header_value = take_while1(|b| {
-        is_alphanumeric(b) || is_space(b)
+        is_alphanumeric(b)
+            || is_space(b)
             || b == b':'
             || b == b'-'
             || b == b'/'

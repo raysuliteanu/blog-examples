@@ -9,7 +9,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, Interest};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task_local;
 
-use crate::http::{HttpHeader, HttpMethod, HttpRequest, HttpStatus, MediaType, parse_message};
+use crate::http::{parse_message, HttpHeader, HttpMethod, HttpRequest, HttpStatus, MediaType};
 
 mod http;
 
@@ -134,7 +134,6 @@ async fn handle_file_upload<'a>(
     filename: &str,
     http_request: &HttpRequest<'a>,
 ) -> io::Result<()> {
-    
     let mut file = get_file(filename, true).await?;
     file.write_all(http_request.body).await?;
 
