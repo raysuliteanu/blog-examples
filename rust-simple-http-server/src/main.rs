@@ -1,16 +1,15 @@
 use std::io;
-use std::io::{Error, ErrorKind};
+use std::io::ErrorKind;
 use std::path::PathBuf;
 
 use clap::Parser;
 use itertools::Itertools;
-use nom::AsBytes;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, Interest};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task_local;
 
-use crate::http::{HttpHeader, HttpMethod, HttpStatus, MediaType, parse_message};
+use crate::http::{parse_message, HttpHeader, HttpMethod, HttpRequest, HttpStatus, MediaType};
 
 mod http;
 
@@ -87,48 +86,70 @@ async fn process_request(stream: &mut TcpStream) -> io::Result<()> {
                 Ok(_n) => {
                     // nothing to do rn
                 }
-                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
                     break;
                 }
                 Err(e) => {
-                    return Err(e.into());
+                    return Err(e);
                 }
             }
         }
     }
 
     let (_, http_request) =
-        parse_message(buf).map_err(|e| std::io::Error::from(ErrorKind::InvalidData))?;
+        parse_message(buf).map_err(|_e| io::Error::from(ErrorKind::InvalidData))?;
+
+    let (cmd, args) = http::split_path(http_request.path);
 
     match http_request.method {
-        HttpMethod::Get => {
-            let (cmd, args) = http::split_path(http_request.path);
-            match cmd {
-                "" | "index.html" => handle_static_content(stream, cmd).await?,
-                "files" => handle_files(stream, args).await?,
-                "echo" => handle_echo(stream, args.as_bytes()).await?,
-                "user-agent" => {
-                    if let Some(user_agent_header) = http_request
-                        .headers
-                        .iter()
-                        .find(|h| h.name == b"User-Agent")
-                    {
-                        handle_echo(stream, &user_agent_header.value).await?
-                    } else {
-                        handle_not_found(stream).await?
-                    }
+        HttpMethod::Get => match cmd {
+            "" | "index.html" => handle_static_content(stream, cmd).await?,
+            "files" => handle_file_download(stream, args).await?,
+            "echo" => handle_echo(stream, args.as_bytes()).await?,
+            "user-agent" => {
+                if let Some(user_agent_header) = http_request
+                    .headers
+                    .iter()
+                    .find(|h| h.name == b"User-Agent")
+                {
+                    handle_echo(stream, user_agent_header.value).await?
+                } else {
+                    handle_not_found(stream).await?
                 }
-                _ => handle_not_found(stream).await?,
             }
-        }
-        HttpMethod::Put => {}
+            _ => handle_not_found(stream).await?,
+        },
+        HttpMethod::Post => match cmd {
+            "files" => handle_file_upload(stream, args, &http_request).await?,
+            _ => handle_not_found(stream).await?,
+        },
         _ => handle_not_implemented(stream).await?,
     }
 
     Ok(())
 }
 
-async fn handle_files(stream: &mut TcpStream, filename: &str) -> io::Result<()> {
+async fn handle_file_upload<'a>(
+    stream: &mut TcpStream,
+    filename: &str,
+    http_request: &HttpRequest<'a>,
+) -> io::Result<()> {
+    let mut file = get_file(filename, true).await?;
+    file.write_all(http_request.body).await?;
+
+    let mut buffer = Vec::new();
+    build_protocol_header(&mut buffer, http::HTTP_CREATED);
+
+    build_headers(&mut buffer, vec![HttpHeader::new(b"Content-Length", b"0")]);
+
+    build_response_body(&mut buffer, "".as_bytes());
+
+    let _ = stream.write(&buffer).await?;
+
+    Ok(())
+}
+
+async fn handle_file_download(stream: &mut TcpStream, filename: &str) -> io::Result<()> {
     let result = read_file(filename).await;
     if let Err(e) = result {
         eprintln!("error reading {filename}: {e}");
@@ -154,19 +175,21 @@ async fn handle_files(stream: &mut TcpStream, filename: &str) -> io::Result<()> 
 }
 
 async fn read_file(filename: &str) -> io::Result<Vec<u8>> {
-    if let Some(directory) = CONTEXT.get().directory {
-        let dir_file = PathBuf::from(directory).join(filename);
-        if !dir_file.exists() {
-            return Err(Error::from(ErrorKind::NotFound));
-        }
+    let mut file = get_file(filename, false).await?;
+    let mut contents = vec![];
+    file.read_to_end(&mut contents).await?;
 
-        let mut file = File::open(dir_file).await?;
-        let mut contents = vec![];
-        file.read_to_end(&mut contents).await?;
+    Ok(contents)
+}
 
-        Ok(contents)
+async fn get_file(filename: &str, create: bool) -> io::Result<File> {
+    let directory = CONTEXT.get().directory.unwrap();
+    let path = PathBuf::from(directory).join(filename);
+
+    if create {
+        Ok(File::create(path).await?)
     } else {
-        Err(Error::from(ErrorKind::NotFound))
+        Ok(File::open(path).await?)
     }
 }
 
@@ -231,11 +254,11 @@ fn build_protocol_header(buffer: &mut Vec<u8>, http_status: HttpStatus) {
 }
 
 fn build_headers(buffer: &mut Vec<u8>, headers: Vec<HttpHeader>) {
-    let mut header_content = headers.iter()
-        .map(|http_header: &HttpHeader| {
-            format!("{http_header}")
-        })
-        .collect_vec().join(CR_LF);
+    let mut header_content = headers
+        .iter()
+        .map(|http_header: &HttpHeader| format!("{http_header}"))
+        .collect_vec()
+        .join(CR_LF);
 
     header_content.push_str(CR_LF);
     header_content.push_str(CR_LF);

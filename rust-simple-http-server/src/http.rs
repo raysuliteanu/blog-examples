@@ -87,7 +87,7 @@ impl FromStr for HttpMethod {
 
 pub(crate) struct HttpStatus(pub(crate) u16, &'static str, &'static str);
 pub(crate) const HTTP_OK: HttpStatus = HttpStatus(200, "OK", "The request has succeeded.");
-pub(crate) const _HTTP_CREATED: HttpStatus = HttpStatus(
+pub(crate) const HTTP_CREATED: HttpStatus = HttpStatus(
     201,
     "Created",
     "The request has been fulfilled and resulted in a new resource being created.",
@@ -116,7 +116,7 @@ pub struct HttpRequest<'r> {
     pub body: &'r [u8],
 }
 
-pub fn parse_message(buffer: &[u8]) -> IResult<(&[u8]), HttpRequest> {
+pub fn parse_message(buffer: &[u8]) -> IResult<&[u8], HttpRequest> {
     let (rest, preamble) = take_until(END_OF_INPUT)(buffer)?;
     let (header_bytes, (method, path, version)) = parse_request_line(preamble)?;
     let (_should_be_empty, headers) = read_headers(header_bytes)?;
@@ -174,7 +174,8 @@ fn read_headers(buffer: &[u8]) -> IResult<&[u8], Vec<HttpHeader>> {
 fn parse_header(input: &[u8]) -> IResult<&[u8], HttpHeader> {
     let match_header_name = take_while1(|b| is_alphabetic(b) || b == b'-');
     let match_header_value = take_while1(|b| {
-        is_alphanumeric(b) || is_space(b)
+        is_alphanumeric(b)
+            || is_space(b)
             || b == b':'
             || b == b'-'
             || b == b'/'
