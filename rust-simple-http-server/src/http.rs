@@ -85,7 +85,7 @@ impl FromStr for HttpMethod {
     }
 }
 
-pub(crate) struct HttpStatus(pub(crate) u16, &'static str, &'static str);
+pub(crate) struct HttpStatus(pub(crate) u16, pub(crate) &'static str, &'static str);
 pub(crate) const HTTP_OK: HttpStatus = HttpStatus(200, "OK", "The request has succeeded.");
 pub(crate) const HTTP_CREATED: HttpStatus = HttpStatus(
     201,

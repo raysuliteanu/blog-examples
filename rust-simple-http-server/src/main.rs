@@ -249,7 +249,7 @@ async fn handle_echo<'a>(stream: &mut TcpStream, body: &[u8]) -> io::Result<()> 
 const CR_LF: &str = "\r\n";
 
 fn build_protocol_header(buffer: &mut Vec<u8>, http_status: HttpStatus) {
-    let protocol_line = format!("HTTP/1.1 {}{CR_LF}", http_status.0);
+    let protocol_line = format!("HTTP/1.1 {} {}{CR_LF}", http_status.0, http_status.1);
     buffer.append(&mut protocol_line.as_bytes().to_vec());
 }
 
