@@ -54,7 +54,6 @@ impl Node for BroadcastHandler {
                         println!("forwarding {:?} to {node}", body);
                         runtime.send_async(node, &body)
                             .expect("send failure to {node}: {request}");
-                        
                     });
 
                 // 3. ack message
@@ -62,21 +61,16 @@ impl Node for BroadcastHandler {
                 Ok(runtime.reply(request.clone(), resp).await?)
             }
             Self::READ_MSG => {
-                let resp = if let Ok(guard) = self.msgs.read() {
+                let body = if let Ok(guard) = self.msgs.read() {
                     let mut resp = request.body.clone().with_type(Self::READ_MSG_OK);
                     let msgs = serde_json::to_value(&*guard).unwrap();
                     resp.extra.insert(String::from("messages"), msgs);
                     Some(resp)
                 } else {
-                    None
-                };
+                    panic!("lock poisoned");
+                }.unwrap();
 
-                if let Some(body) = resp {
-                    Ok(runtime.reply(request.clone(), body).await?)
-                }
-                else {
-                    panic!("lock poisoned")
-                }
+                Ok(runtime.reply(request.clone(), body).await?)
             }
             Self::TOPOLOGY_MSG => {
                 // for now don't need to do anything
