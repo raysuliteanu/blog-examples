@@ -1,0 +1,7 @@
+{"src": "c1", "dest": "n3", "body": {"type": "broadcast", "message": 1000}}
+{"src": "c1", "dest": "n3", "body": {"type": "broadcast", "message": 2000}}
+{"src": "c1", "dest": "n3", "body": {"type": "broadcast", "message": 3000}}
+{"src": "c1", "dest": "n3", "body": {"type": "broadcast", "message": 4000}}
+{"src": "c1", "dest": "n3", "body": {"type": "broadcast", "message": 5000}}
+
+{"src": "c1", "dest": "n3", "body": {"type": "read"}}
