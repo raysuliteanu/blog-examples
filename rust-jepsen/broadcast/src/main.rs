@@ -65,10 +65,10 @@ impl Node for BroadcastHandler {
                     let mut resp = request.body.clone().with_type(Self::READ_MSG_OK);
                     let msgs = serde_json::to_value(&*guard).unwrap();
                     resp.extra.insert(String::from("messages"), msgs);
-                    Some(resp)
+                    resp
                 } else {
                     panic!("lock poisoned");
-                }.unwrap();
+                };
 
                 Ok(runtime.reply(request.clone(), body).await?)
             }
