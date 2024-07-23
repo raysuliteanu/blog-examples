@@ -7,20 +7,25 @@ use clap::{command, Args, Parser, Subcommand};
 use flate2::bufread::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
+use lazy_static::lazy_static;
 use log::{debug, trace};
 use sha1::{Digest, Sha1};
 
-const GIT_DIR: &str = ".git";
-const GIT_OBJ_DIR: &str = ".git/objects";
-const GIT_OBJ_BRANCHES_DIR: &str = ".git/objects/branches";
-const GIT_OBJ_HOOKS_DIR: &str = ".git/objects/hooks";
-const GIT_OBJ_INFO_DIR: &str = ".git/objects/info";
-const GIT_OBJ_PACK_DIR: &str = ".git/objects/pack";
-const GIT_REFS_DIR: &str = ".git/refs";
-const GIT_REFS_HEADS_DIR: &str = ".git/refs/heads";
-const GIT_REFS_TAGS_DIR: &str = ".git/refs/tags";
-const GIT_HEAD: &str = ".git/HEAD";
-const _GIT_CONFIG: &str = ".git/config";
+const GIT_DIR_NAME: &str = ".git";
+const GIT_OBJ_DIR_NAME: &str = ".git/objects";
+const GIT_OBJ_BRANCHES_DIR_NAME: &str = ".git/objects/branches";
+const GIT_OBJ_HOOKS_DIR_NAME: &str = ".git/objects/hooks";
+const GIT_OBJ_INFO_DIR_NAME: &str = ".git/objects/info";
+const GIT_OBJ_PACK_DIR_NAME: &str = ".git/objects/pack";
+const GIT_REFS_DIR_NAME: &str = ".git/refs";
+const GIT_REFS_HEADS_DIR_NAME: &str = ".git/refs/heads";
+const GIT_REFS_TAGS_DIR_NAME: &str = ".git/refs/tags";
+
+lazy_static! {
+    static ref GIT_PARENT_DIR: PathBuf = find_git_parent_dir();
+    static ref GIT_HEAD: PathBuf = GIT_PARENT_DIR.join(".git/HEAD");
+    static ref GIT_CONFIG: PathBuf = GIT_PARENT_DIR.join(".git/config");
+}
 
 #[derive(Debug, Parser)]
 #[command(name = "git")]
@@ -158,7 +163,7 @@ fn hash_object_command(args: HashObjectArgs) -> std::io::Result<()> {
 
 fn write_object(encoded: &[u8], hash: &str) -> std::io::Result<()> {
     let (dir, name) = hash.split_at(2);
-    let full_dir = format!("{}/{}", GIT_OBJ_DIR, dir);
+    let full_dir = format!("{}/{}/{}", GIT_PARENT_DIR.display(), GIT_OBJ_DIR_NAME, dir);
     let full_dir = full_dir.as_str();
     debug!("writing to {full_dir}");
     if !Path::new(full_dir).exists() {
@@ -225,7 +230,7 @@ fn decode_obj_content(file: File, decoded_content: &mut Vec<u8>) -> std::io::Res
 
 fn get_object_file(obj_id: &str) -> PathBuf {
     let (dir, id) = obj_id.split_at(2);
-    let obj_dir = PathBuf::from(GIT_OBJ_DIR).join(dir);
+    let obj_dir = GIT_PARENT_DIR.join(GIT_OBJ_DIR_NAME).join(dir);
     if !obj_dir.exists() || !obj_dir.is_dir() {
         eprintln!("can't access {:#?}", obj_dir);
     }
@@ -240,38 +245,57 @@ fn get_object_file(obj_id: &str) -> PathBuf {
 
 // todo: support options in args
 fn init_command(_args: InitArgs) -> std::io::Result<()> {
-    fs::create_dir(GIT_DIR)?;
-    trace!("created {GIT_DIR}");
-    fs::create_dir(GIT_OBJ_DIR)?;
-    trace!("created {GIT_OBJ_DIR}");
-    fs::create_dir(GIT_OBJ_BRANCHES_DIR)?;
-    trace!("created {GIT_OBJ_BRANCHES_DIR}");
-    fs::create_dir(GIT_OBJ_HOOKS_DIR)?;
-    trace!("created {GIT_OBJ_HOOKS_DIR}");
-    fs::create_dir(GIT_OBJ_INFO_DIR)?;
-    trace!("created {GIT_OBJ_INFO_DIR}");
-    fs::create_dir(GIT_OBJ_PACK_DIR)?;
-    trace!("created {GIT_OBJ_PACK_DIR}");
-    fs::create_dir(GIT_REFS_DIR)?;
-    trace!("created {GIT_REFS_DIR}");
-    fs::create_dir(GIT_REFS_TAGS_DIR)?;
-    trace!("created {GIT_REFS_TAGS_DIR}");
-    fs::create_dir(GIT_REFS_HEADS_DIR)?;
-    trace!("created {GIT_REFS_HEADS_DIR}");
+    fs::create_dir(GIT_DIR_NAME)?;
+    trace!("created {GIT_DIR_NAME}");
+    fs::create_dir(GIT_OBJ_DIR_NAME)?;
+    trace!("created {GIT_OBJ_DIR_NAME}");
+    fs::create_dir(GIT_OBJ_BRANCHES_DIR_NAME)?;
+    trace!("created {GIT_OBJ_BRANCHES_DIR_NAME}");
+    fs::create_dir(GIT_OBJ_HOOKS_DIR_NAME)?;
+    trace!("created {GIT_OBJ_HOOKS_DIR_NAME}");
+    fs::create_dir(GIT_OBJ_INFO_DIR_NAME)?;
+    trace!("created {GIT_OBJ_INFO_DIR_NAME}");
+    fs::create_dir(GIT_OBJ_PACK_DIR_NAME)?;
+    trace!("created {GIT_OBJ_PACK_DIR_NAME}");
+    fs::create_dir(GIT_REFS_DIR_NAME)?;
+    trace!("created {GIT_REFS_DIR_NAME}");
+    fs::create_dir(GIT_REFS_TAGS_DIR_NAME)?;
+    trace!("created {GIT_REFS_TAGS_DIR_NAME}");
+    fs::create_dir(GIT_REFS_HEADS_DIR_NAME)?;
+    trace!("created {GIT_REFS_HEADS_DIR_NAME}");
 
     // todo: initial head pointer should come from
     // -b <name> or --initial-branch=<name> or
     // ~/.gitconfig/init.defaultBranch or
     // 'master'
-    fs::write(GIT_HEAD, "ref: refs/heads/main\n")?;
+    fs::write(GIT_HEAD.as_path(), "ref: refs/heads/main\n")?;
 
-    // todo: create .git/config file
+    // todo: write config
+    fs::write(GIT_CONFIG.as_path(), "")?;
 
     println!(
         "Initialized empty Git repository in {}/{}",
         env::current_dir()?.display(),
-        GIT_DIR
+        GIT_DIR_NAME
     );
 
     Ok(())
+}
+
+fn find_git_parent_dir() -> PathBuf {
+    let current_dir = env::current_dir().expect("failed to get current directory");
+    let mut current_dir = current_dir.to_path_buf();
+
+    loop {
+        let git_dir = current_dir.join(GIT_DIR_NAME);
+        if git_dir.is_dir() {
+            return git_dir.parent().unwrap().to_path_buf();
+        }
+
+        if !current_dir.pop() {
+            break;
+        }
+    }
+
+    panic!("not a git repository (or any of the parent directories): .git")
 }
