@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::{stdin, BufReader, ErrorKind, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 use clap::{command, Args, Parser, Subcommand};
@@ -32,12 +32,7 @@ struct Git {
 #[derive(Debug, Subcommand)]
 enum Commands {
     Init(InitArgs),
-    #[command(arg_required_else_help = true)]
-    CatFile {
-        #[arg(short)]
-        pretty: bool,
-        object: String,
-    },
+    CatFile(CatFileArgs),
     HashObject(HashObjectArgs),
 }
 
@@ -121,10 +116,7 @@ fn main() -> std::io::Result<()> {
 
     match git.command {
         Commands::Init(args) => init_command(args),
-        Commands::CatFile {
-            pretty,
-            object: obj_id,
-        } => cat_file_command(pretty, &obj_id),
+        Commands::CatFile(args) => cat_file_command(args),
         Commands::HashObject(args) => hash_object_command(args),
     }
 }
@@ -132,28 +124,31 @@ fn main() -> std::io::Result<()> {
 fn hash_object_command(args: HashObjectArgs) -> std::io::Result<()> {
     if args.stdin {
         let mut stdin = stdin();
-        let mut buf_in = String::new();
-        let read = stdin.read_to_string(&mut buf_in)?;
-        debug!("read ({}B): {}", read, &buf_in);
-        if args.obj_type == "blob" {
-            buf_in = format!("blob {read}\0{}", buf_in);
+        let mut buf_in = Vec::new();
+        let read = stdin.read_to_end(&mut buf_in)?;
+        let mut header = args.obj_type;
+        if header == "blob" {
+            header.push_str(format!(" {read}\0").as_str());
         } else {
             unimplemented!();
         }
 
+        let mut buf = Vec::from(header);
+        buf.append(&mut buf_in);
+
         let mut hasher = Sha1::new();
-        hasher.update(&buf_in[..]);
+        hasher.update(&buf[..]);
         let sha1_hash = hasher.finalize();
 
-        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(buf_in.as_bytes())?;
-        let _encoded = encoder.finish()?;
+        let encoded = encode_obj_content(&mut buf)?;
+
+        let hash = hex::encode(sha1_hash);
 
         if args.write_to_db {
-            unimplemented!("not implemented yet")
-        } else {
-            println!("{}", hex::encode(sha1_hash));
+            write_object(&encoded, &hash)?;
         }
+
+        println!("{}", hash);
     } else {
         unimplemented!("not implemented yet")
     }
@@ -161,10 +156,37 @@ fn hash_object_command(args: HashObjectArgs) -> std::io::Result<()> {
     Ok(())
 }
 
-fn cat_file_command(pretty: bool, obj_id: &String) -> std::io::Result<()> {
-    if pretty {
-        let object_file = get_object_file(&obj_id);
+fn write_object(encoded: &[u8], hash: &str) -> std::io::Result<()> {
+    let (dir, name) = hash.split_at(2);
+    let full_dir = format!("{}/{}", GIT_OBJ_DIR, dir);
+    let full_dir = full_dir.as_str();
+    debug!("writing to {full_dir}");
+    if !Path::new(full_dir).exists() {
+        debug!("creating full dir");
+        fs::create_dir(full_dir)?;
+    }
 
+    let file_path = Path::new(full_dir).join(name);
+    debug!("writing to {}", file_path.display());
+
+    let mut file = File::create(file_path)?;
+    file.write_all(encoded)?;
+    Ok(())
+}
+
+fn encode_obj_content(content: &mut [u8]) -> std::io::Result<Vec<u8>> {
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(content)?;
+    let result = encoder.finish()?;
+    Ok(result)
+}
+
+fn cat_file_command(args: CatFileArgs) -> std::io::Result<()> {
+    if args.pretty {
+        let object_file = get_object_file(&args.object);
+
+        // todo: need to support partial lookup i.e. obj id could be 'abc123' vs full hash
+        // so need to support looking for 'ab/c123*'
         if let Ok(file) = File::open(object_file) {
             let decoded_content = &mut Vec::new();
             decode_obj_content(file, decoded_content)?;
@@ -201,8 +223,8 @@ fn decode_obj_content(file: File, decoded_content: &mut Vec<u8>) -> std::io::Res
     Ok(())
 }
 
-fn get_object_file(obj_id: &&String) -> PathBuf {
-    let (dir, id) = parse_obj_id(obj_id);
+fn get_object_file(obj_id: &str) -> PathBuf {
+    let (dir, id) = obj_id.split_at(2);
     let obj_dir = PathBuf::from(GIT_OBJ_DIR).join(dir);
     if !obj_dir.exists() || !obj_dir.is_dir() {
         eprintln!("can't access {:#?}", obj_dir);
@@ -214,10 +236,6 @@ fn get_object_file(obj_id: &&String) -> PathBuf {
     }
 
     obj_file
-}
-
-fn parse_obj_id(obj_id: &str) -> (&str, &str) {
-    obj_id.split_at(2)
 }
 
 // todo: support options in args
