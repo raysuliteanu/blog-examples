@@ -72,7 +72,6 @@ git init [-q | --quiet] [--bare] [--template=<template_directory>]
                 [-b <branch-name> | --initial-branch=<branch-name>]
                 [--shared[=<permissions>]] [directory]
 */
-// todo: add help
 #[derive(Debug, Args)]
 struct InitArgs {
     #[arg(short, long, default_value_t)]
@@ -192,8 +191,6 @@ fn cat_file_command(args: CatFileArgs) -> std::io::Result<()> {
     if args.pretty {
         let object_file = get_object_file(&args.object);
 
-        // todo: need to support partial lookup i.e. obj id could be 'abc123' vs full hash
-        // so need to support looking for 'ab/c123*'
         if let Ok(file) = File::open(object_file) {
             let decoded_content = &mut Vec::new();
             decode_obj_content(file, decoded_content)?;
@@ -231,17 +228,33 @@ fn decode_obj_content(file: File, decoded_content: &mut Vec<u8>) -> std::io::Res
 }
 
 fn get_object_file(obj_id: &str) -> PathBuf {
+    if obj_id.len() < 3 {
+        panic!("Not a valid object name {obj_id}")
+    }
     let (dir, id) = obj_id.split_at(2);
     let obj_dir = GIT_PARENT_DIR.join(GIT_OBJ_DIR_NAME).join(dir);
     if !obj_dir.exists() || !obj_dir.is_dir() {
-        eprintln!("can't access {:#?}", obj_dir);
+        debug!("can't access {}", obj_dir.display());
+        panic!("Not a valid object name {obj_id}")
     }
 
-    let obj_file = obj_dir.join(id);
+    let mut obj_file = obj_dir.join(id);
     if !obj_file.exists() || !obj_file.is_file() {
-        eprintln!("can't access {:#?}", obj_file);
+        // maybe not a full hash so do a partial match
+        for entry in obj_dir
+            .read_dir()
+            .unwrap_or_else(|_| panic!("Not a valid object name {obj_id}"))
+            .flatten()
+        {
+            let os_string = entry.file_name();
+            let filename = os_string.to_str().unwrap();
+            if filename.starts_with(id) {
+                obj_file = obj_dir.join(filename);
+            }
+        }
     }
 
+    debug!("found {:?}", obj_file);
     obj_file
 }
 
