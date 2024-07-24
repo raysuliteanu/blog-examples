@@ -188,33 +188,50 @@ fn encode_obj_content(content: &mut [u8]) -> std::io::Result<Vec<u8>> {
 }
 
 fn cat_file_command(args: CatFileArgs) -> std::io::Result<()> {
-    if args.pretty {
-        let object_file = get_object_file(&args.object);
+    let object_file = get_object_file(&args.object);
 
-        if let Ok(file) = File::open(object_file) {
-            let decoded_content = &mut Vec::new();
-            decode_obj_content(file, decoded_content)?;
+    let decoded_content = &mut Vec::new();
 
-            let data: String = decoded_content
-                .iter()
-                .skip_while(|b| **b != 0)
-                .skip(1)
-                .map(|b| *b as char)
-                .fold(String::new(), |mut acc, c| {
-                    acc.push(c);
-                    acc
-                });
-            print!("{data}");
+    if let Ok(file) = File::open(object_file) {
+        decode_obj_content(file, decoded_content)?;
+    }
 
-            Ok(())
-        } else {
-            // todo: work on the errors
-            Err(std::io::Error::from(ErrorKind::PermissionDenied))
+    let mut index = 0;
+    for (i, v) in decoded_content.iter().enumerate() {
+        if *v == 0 {
+            index = i;
+            break;
         }
+    }
+
+    let header = &mut decoded_content[0..index].split(|x| *x == b' ');
+    let obj_type = header.next().unwrap();
+    let obj_len = header.next().unwrap();
+    let content = &decoded_content[index + 1..];
+
+    if args.pretty {
+        // todo: need to format content based on obj_type
+        print!("{}", bytes_to_string(content));
+    } else if args.obj_type {
+        println!("{}", bytes_to_string(obj_type));
+    } else if args.show_size {
+        println!("{}", bytes_to_string(obj_len));
     } else {
         // todo: work on the errors
-        Err(std::io::Error::from(ErrorKind::Other))
+        return Err(std::io::Error::from(ErrorKind::Other));
     }
+
+    Ok(())
+}
+
+fn bytes_to_string(content: &[u8]) -> String {
+    content
+        .iter()
+        .map(|b| *b as char)
+        .fold(String::new(), |mut acc, c| {
+            acc.push(c);
+            acc
+        })
 }
 
 fn decode_obj_content(file: File, decoded_content: &mut Vec<u8>) -> std::io::Result<()> {
