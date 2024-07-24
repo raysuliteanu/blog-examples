@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::fs::File;
 use std::io::{stdin, BufReader, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
@@ -52,7 +53,7 @@ struct HashObjectArgs {
     #[arg(short = 'w', default_value = "false")]
     write_to_db: bool,
     #[arg(long)]
-    path: Option<String>,
+    path: Option<OsString>,
     #[arg(long, default_value = "false")]
     no_filters: bool,
     #[arg(long, default_value = "false")]
@@ -60,8 +61,9 @@ struct HashObjectArgs {
     #[arg(long, default_value = "false")]
     literally: bool,
     #[arg(long)]
-    stdin_paths: Option<String>,
-    file: Option<String>, // list of files I think; also how to support '--' indicating now come the file(s)
+    stdin_paths: bool,
+    #[arg(last = true)]
+    file: Option<Vec<OsString>>,
 }
 
 /*
@@ -78,9 +80,9 @@ struct InitArgs {
     #[arg(long, default_value_t)]
     bare: bool,
     #[arg(long)]
-    template: Option<String>,
+    template: Option<OsString>,
     #[arg(long)]
-    separate_git_dir: Option<String>,
+    separate_git_dir: Option<OsString>,
     #[arg(long, default_value = "sha1")]
     object_format: String,
     #[arg(short = 'b', long)]
@@ -88,7 +90,7 @@ struct InitArgs {
     // false|true|umask|group|all|world|everybody|0xxx
     #[arg(long)]
     shared: Option<String>,
-    directory: Option<String>,
+    directory: Option<OsString>,
 }
 
 /*
