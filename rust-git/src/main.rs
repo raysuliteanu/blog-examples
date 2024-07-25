@@ -12,6 +12,8 @@ use lazy_static::lazy_static;
 use log::{debug, trace};
 use sha1::{Digest, Sha1};
 
+use crate::GitObjectType::{Blob, Commit, Tree};
+
 const GIT_DIR_NAME: &str = ".git";
 const GIT_OBJ_DIR_NAME: &str = ".git/objects";
 const GIT_OBJ_BRANCHES_DIR_NAME: &str = ".git/objects/branches";
@@ -26,6 +28,24 @@ lazy_static! {
     static ref GIT_PARENT_DIR: PathBuf = find_git_parent_dir();
     static ref GIT_HEAD: PathBuf = GIT_PARENT_DIR.join(".git/HEAD");
     static ref GIT_CONFIG: PathBuf = GIT_PARENT_DIR.join(".git/config");
+}
+
+#[derive(Debug)]
+pub enum GitObjectType {
+    Blob,
+    Tree,
+    Commit,
+}
+
+impl From<String> for GitObjectType {
+    fn from(value: String) -> Self {
+        match value.as_str() {
+            "blob" => Blob,
+            "tree" => Tree,
+            "commit" => Commit,
+            _ => panic!(),
+        }
+    }
 }
 
 #[derive(Debug, Parser)]
@@ -188,40 +208,83 @@ fn encode_obj_content(content: &mut [u8]) -> std::io::Result<Vec<u8>> {
 }
 
 fn cat_file_command(args: CatFileArgs) -> std::io::Result<()> {
-    let object_file = get_object_file(&args.object);
-
     let decoded_content = &mut Vec::new();
 
-    if let Ok(file) = File::open(object_file) {
-        decode_obj_content(file, decoded_content)?;
-    }
+    get_object(&args.object, decoded_content)?;
 
-    let mut index = 0;
-    for (i, v) in decoded_content.iter().enumerate() {
-        if *v == 0 {
-            index = i;
-            break;
-        }
-    }
+    let index = find_null_byte_index(decoded_content);
 
-    let header = &mut decoded_content[0..index].split(|x| *x == b' ');
-    let obj_type = header.next().unwrap();
-    let obj_len = header.next().unwrap();
+    let (obj_type, obj_len) = get_object_header(decoded_content, index);
+
     let content = &decoded_content[index + 1..];
 
     if args.pretty {
-        // todo: need to format content based on obj_type
-        print!("{}", bytes_to_string(content));
+        match GitObjectType::from(obj_type) {
+            Blob => {
+                print!("{}", bytes_to_string(content));
+            }
+            Tree => {
+                // each line of content is of the form
+                // [filemode] [filename]\0[sizeof(sha1_hash)==20b]
+                let mut consumed = 0usize;
+                let len = obj_len.as_str().parse::<usize>().expect("invalid length");
+                while consumed < len {
+                    let index = find_null_byte_index(&content[consumed..]);
+                    let end = consumed + index;
+                    assert!(end < content.len());
+                    let tree_row_prefix = &mut content[consumed..end].split(|x| *x == b' ');
+                    let mode = bytes_to_string(tree_row_prefix.next().unwrap());
+                    let file = bytes_to_string(tree_row_prefix.next().unwrap());
+                    consumed += index + 1;
+                    let hash = hex::encode(&content[consumed..consumed + 20]);
+                    consumed += 20;
+                    let tmp_buf = &mut Vec::new();
+                    get_object(hash.as_str(), tmp_buf)?;
+                    let index = find_null_byte_index(tmp_buf);
+                    let (obj_type, _) = get_object_header(tmp_buf, index);
+                    println!("{:0>6} {} {}    {}", mode, obj_type, hash, file);
+                }
+            }
+            Commit => {}
+        }
     } else if args.obj_type {
-        println!("{}", bytes_to_string(obj_type));
+        println!("{obj_type}");
     } else if args.show_size {
-        println!("{}", bytes_to_string(obj_len));
+        println!("{obj_len}");
     } else {
         // todo: work on the errors
         return Err(std::io::Error::from(ErrorKind::Other));
     }
 
     Ok(())
+}
+
+fn get_object_header(decoded_content: &mut [u8], index: usize) -> (String, String) {
+    let header = &mut decoded_content[0..index].split(|x| *x == b' ');
+    let obj_type = bytes_to_string(header.next().unwrap());
+    let obj_len = bytes_to_string(header.next().unwrap());
+    (obj_type, obj_len)
+}
+
+fn get_object(object: &str, decoded_content: &mut Vec<u8>) -> std::io::Result<()> {
+    let object_file = get_object_file(object);
+
+    if let Ok(file) = File::open(object_file) {
+        decode_obj_content(file, decoded_content)?;
+    }
+
+    Ok(())
+}
+
+fn find_null_byte_index(content: &[u8]) -> usize {
+    debug!("{:?}", content);
+    for (i, v) in content.iter().enumerate() {
+        if *v == 0 {
+            return i;
+        }
+    }
+
+    content.len()
 }
 
 fn bytes_to_string(content: &[u8]) -> String {
