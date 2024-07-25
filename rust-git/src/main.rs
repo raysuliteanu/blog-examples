@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs::File;
 use std::io::{stdin, BufReader, ErrorKind, Read, Write};
@@ -23,11 +24,14 @@ const GIT_OBJ_PACK_DIR_NAME: &str = ".git/objects/pack";
 const GIT_REFS_DIR_NAME: &str = ".git/refs";
 const GIT_REFS_HEADS_DIR_NAME: &str = ".git/refs/heads";
 const GIT_REFS_TAGS_DIR_NAME: &str = ".git/refs/tags";
+const GIT_USER_CONFIG_FILE_NAME: &str = ".gitconfig";
 
 lazy_static! {
     static ref GIT_PARENT_DIR: PathBuf = find_git_parent_dir();
     static ref GIT_HEAD: PathBuf = GIT_PARENT_DIR.join(".git/HEAD");
-    static ref GIT_CONFIG: PathBuf = GIT_PARENT_DIR.join(".git/config");
+    static ref GIT_REPO_CONFIG_FILE: PathBuf = GIT_PARENT_DIR.join(".git/config");
+    static ref GIT_CONFIG: HashMap<String, String> =
+        load_git_config().unwrap_or_else(|_| HashMap::default());
 }
 
 #[derive(Debug)]
@@ -339,7 +343,7 @@ fn get_object_file(obj_id: &str) -> PathBuf {
 }
 
 // todo: support options in args
-fn init_command(_args: InitArgs) -> std::io::Result<()> {
+fn init_command(args: InitArgs) -> std::io::Result<()> {
     fs::create_dir(GIT_DIR_NAME)?;
     trace!("created {GIT_DIR_NAME}");
     fs::create_dir(GIT_OBJ_DIR_NAME)?;
@@ -359,14 +363,31 @@ fn init_command(_args: InitArgs) -> std::io::Result<()> {
     fs::create_dir(GIT_REFS_HEADS_DIR_NAME)?;
     trace!("created {GIT_REFS_HEADS_DIR_NAME}");
 
-    // todo: initial head pointer should come from
-    // -b <name> or --initial-branch=<name> or
-    // ~/.gitconfig/init.defaultBranch or
-    // 'master'
-    fs::write(GIT_HEAD.as_path(), "ref: refs/heads/main\n")?;
+    // let git_config = load_git_config()?;
 
-    // todo: write config
-    fs::write(GIT_CONFIG.as_path(), "")?;
+    if let Some(branch) = args.initial_branch {
+        fs::write(GIT_HEAD.as_path(), format!("ref: refs/heads/{branch}\n"))?;
+    } else if GIT_CONFIG.contains_key("init.defaultBranch") {
+        fs::write(
+            GIT_HEAD.as_path(),
+            format!(
+                "ref: refs/heads/{}\n",
+                GIT_CONFIG.get("init.defaultBranch").unwrap()
+            ),
+        )?;
+    }
+
+    let mut dot_git_config = String::from(
+        r"[core]
+    repositoryformatversion = 0
+    filemode = true
+    logallrefupdates = true
+    ",
+    );
+
+    dot_git_config.push_str(format!("bare = {}\n\n", args.bare).as_str());
+
+    fs::write(GIT_REPO_CONFIG_FILE.as_path(), dot_git_config)?;
 
     println!(
         "Initialized empty Git repository in {}/{}",
@@ -393,4 +414,55 @@ fn find_git_parent_dir() -> PathBuf {
     }
 
     panic!("not a git repository (or any of the parent directories): .git")
+}
+
+/// Load the contents of ~/.gitconfig if it exists, returning a map of config items as key/value pairs
+/// Section headers are prefixed to individual config item names e.g.
+/// ```
+/// [init]
+/// defaultBranch = foo
+/// ```
+/// becomes `init.defaultBranch` in the map as the key for the value `foo`.
+///
+/// _NOTE_: since the Git config format is not standard (not INI not TOML) gotta do it myself
+///
+/// _TODO_: load and merge the global git config if it exists
+fn load_git_config() -> std::io::Result<HashMap<String, String>> {
+    let mut config = HashMap::new();
+    if let Some(home_dir) = dirs::home_dir() {
+        let git_config_path = home_dir.join(GIT_USER_CONFIG_FILE_NAME);
+        if git_config_path.try_exists().is_ok() {
+            let mut file = File::open(git_config_path)?;
+            let buf = &mut String::new();
+            let _ = file.read_to_string(buf);
+            let mut section = "";
+            for it in buf.split_terminator('\n') {
+                let line = it.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+
+                if line.starts_with('[') && line.ends_with(']') {
+                    section = line.strip_prefix('[').unwrap().strip_suffix(']').unwrap();
+
+                    continue;
+                }
+
+                let (key, value) = get_config_pair(line);
+                let full_key = [section, key].join(".");
+                debug!("adding config: {}={}", full_key, value);
+                config.insert(full_key, String::from(value));
+            }
+        }
+    }
+
+    Ok(config)
+}
+
+fn get_config_pair(line: &str) -> (&str, &str) {
+    let mut parts = line.split('=');
+    let key = parts.next().unwrap().trim();
+    let value = parts.next().unwrap().trim();
+
+    (key, value)
 }
