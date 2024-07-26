@@ -16,6 +16,7 @@ use sha1::{Digest, Sha1};
 
 use crate::GitObjectType::{Blob, Commit, Tree};
 
+const GIT_DEFAULT_BRANCH_NAME: &str = "master";
 const GIT_DIR_NAME: &str = ".git";
 const GIT_OBJ_DIR_NAME: &str = ".git/objects";
 const GIT_OBJ_BRANCHES_DIR_NAME: &str = ".git/objects/branches";
@@ -28,13 +29,15 @@ const GIT_REFS_TAGS_DIR_NAME: &str = ".git/refs/tags";
 const GIT_USER_CONFIG_FILE_NAME: &str = ".gitconfig";
 
 lazy_static! {
+    static ref GIT_CONFIG: HashMap<String, String> =
+        load_git_config().unwrap_or_else(|_| HashMap::default());
+
     // NOTE: GIT_PARENT_DIR will panic if used during 'init' command processing
     // since there of course is no .git dir to find the parent of yet!
     static ref GIT_PARENT_DIR: PathBuf = find_git_parent_dir();
+
     static ref GIT_HEAD: PathBuf = PathBuf::from(".git/HEAD");
     static ref GIT_REPO_CONFIG_FILE: PathBuf = PathBuf::from(".git/config");
-    static ref GIT_CONFIG: HashMap<String, String> =
-        load_git_config().unwrap_or_else(|_| HashMap::default());
 }
 
 #[derive(Debug)]
@@ -56,7 +59,6 @@ impl From<String> for GitObjectType {
 }
 
 #[derive(Debug, Parser)]
-#[command(name = "git")]
 struct Git {
     #[command(subcommand)]
     command: Commands,
@@ -68,6 +70,25 @@ enum Commands {
     CatFile(CatFileArgs),
     HashObject(HashObjectArgs),
     Config(ConfigArgs),
+}
+
+#[derive(Debug, Args)]
+struct InitArgs {
+    #[arg(short, long, default_value_t)]
+    quiet: bool,
+    #[arg(long, default_value_t)]
+    bare: bool,
+    #[arg(long)]
+    template: Option<OsString>,
+    #[arg(long)]
+    separate_git_dir: Option<OsString>,
+    #[arg(long, default_value = "sha1")]
+    object_format: String,
+    #[arg(short = 'b', long)]
+    initial_branch: Option<String>,
+    #[arg(long)]
+    shared: Option<String>,
+    directory: Option<OsString>,
 }
 
 #[derive(Debug, Args)]
@@ -105,32 +126,6 @@ struct HashObjectArgs {
     stdin_paths: bool,
     #[arg(last = true)]
     file: Option<Vec<OsString>>,
-}
-
-/*
-git init [-q | --quiet] [--bare] [--template=<template_directory>]
-                [--separate-git-dir <git dir>] [--object-format=<format>]
-                [-b <branch-name> | --initial-branch=<branch-name>]
-                [--shared[=<permissions>]] [directory]
-*/
-#[derive(Debug, Args)]
-struct InitArgs {
-    #[arg(short, long, default_value_t)]
-    quiet: bool,
-    #[arg(long, default_value_t)]
-    bare: bool,
-    #[arg(long)]
-    template: Option<OsString>,
-    #[arg(long)]
-    separate_git_dir: Option<OsString>,
-    #[arg(long, default_value = "sha1")]
-    object_format: String,
-    #[arg(short = 'b', long)]
-    initial_branch: Option<String>,
-    // false|true|umask|group|all|world|everybody|0xxx
-    #[arg(long)]
-    shared: Option<String>,
-    directory: Option<OsString>,
 }
 
 /*
@@ -417,17 +412,17 @@ fn init_command(args: InitArgs) -> io::Result<()> {
 
     let path_buf = actual_git_parent_dir.join(GIT_HEAD.as_path());
 
-    if let Some(branch) = args.initial_branch {
-        fs::write(path_buf.as_path(), format!("ref: refs/heads/{branch}\n"))?;
-    } else if GIT_CONFIG.contains_key("init.defaultBranch") {
-        fs::write(
-            path_buf.as_path(),
-            format!(
-                "ref: refs/heads/{}\n",
-                GIT_CONFIG.get("init.defaultBranch").unwrap()
-            ),
-        )?;
-    }
+    let branch_name =
+        args.initial_branch
+            .unwrap_or_else(|| match GIT_CONFIG.get("init.defaultBranch") {
+                Some(branch) => branch.to_string(),
+                None => GIT_DEFAULT_BRANCH_NAME.to_string(),
+            });
+
+    fs::write(
+        path_buf.as_path(),
+        format!("ref: refs/heads/{branch_name}\n"),
+    )?;
 
     let mut dot_git_config = String::from(
         r"[core]
