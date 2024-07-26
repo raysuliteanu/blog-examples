@@ -3,12 +3,13 @@ use std::ffi::OsString;
 use std::fs::File;
 use std::io::{stdin, BufReader, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
-use std::{env, fs, path};
+use std::{env, fs, io, path};
 
 use clap::{command, Args, Parser, Subcommand};
 use flate2::bufread::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
+use lazy_regex::regex_captures;
 use lazy_static::lazy_static;
 use log::{debug, trace};
 use sha1::{Digest, Sha1};
@@ -66,6 +67,20 @@ enum Commands {
     Init(InitArgs),
     CatFile(CatFileArgs),
     HashObject(HashObjectArgs),
+    Config(ConfigArgs),
+}
+
+#[derive(Debug, Args)]
+#[command(arg_required_else_help = true)]
+struct ConfigArgs {
+    #[arg(short, long, default_value = "false")]
+    list: bool,
+    #[arg(long, default_value = "false")]
+    global: bool,
+    #[arg(long, default_value = "false")]
+    system: bool,
+    #[arg(long, default_value = "false")]
+    local: bool,
 }
 
 /*
@@ -141,7 +156,7 @@ struct CatFileArgs {
 // - expand on the Clap details for help and such
 // - handle errors better e.g. "custom" errors this thiserror/anyhow crates
 
-fn main() -> std::io::Result<()> {
+fn main() -> io::Result<()> {
     env_logger::init();
 
     let git = Git::parse();
@@ -150,10 +165,22 @@ fn main() -> std::io::Result<()> {
         Commands::Init(args) => init_command(args),
         Commands::CatFile(args) => cat_file_command(args),
         Commands::HashObject(args) => hash_object_command(args),
+        Commands::Config(args) => config_command(args),
     }
 }
 
-fn hash_object_command(args: HashObjectArgs) -> std::io::Result<()> {
+fn config_command(args: ConfigArgs) -> io::Result<()> {
+    if args.list {
+        // todo: filter by local/system/global; if none, print all
+        GIT_CONFIG
+            .iter()
+            .for_each(|entry| println!("{}={}", entry.0, entry.1))
+    }
+
+    Ok(())
+}
+
+fn hash_object_command(args: HashObjectArgs) -> io::Result<()> {
     if args.stdin {
         let mut stdin = stdin();
         let mut buf_in = Vec::new();
@@ -188,7 +215,7 @@ fn hash_object_command(args: HashObjectArgs) -> std::io::Result<()> {
     Ok(())
 }
 
-fn write_object(encoded: &[u8], hash: &str) -> std::io::Result<()> {
+fn write_object(encoded: &[u8], hash: &str) -> io::Result<()> {
     let (dir, name) = hash.split_at(2);
     let full_dir = format!("{}/{}/{}", GIT_PARENT_DIR.display(), GIT_OBJ_DIR_NAME, dir);
     let full_dir = full_dir.as_str();
@@ -206,14 +233,14 @@ fn write_object(encoded: &[u8], hash: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-fn encode_obj_content(content: &mut [u8]) -> std::io::Result<Vec<u8>> {
+fn encode_obj_content(content: &mut [u8]) -> io::Result<Vec<u8>> {
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(content)?;
     let result = encoder.finish()?;
     Ok(result)
 }
 
-fn cat_file_command(args: CatFileArgs) -> std::io::Result<()> {
+fn cat_file_command(args: CatFileArgs) -> io::Result<()> {
     let decoded_content = &mut Vec::new();
 
     get_object(&args.object, decoded_content)?;
@@ -259,7 +286,7 @@ fn cat_file_command(args: CatFileArgs) -> std::io::Result<()> {
         println!("{obj_len}");
     } else {
         // todo: work on the errors
-        return Err(std::io::Error::from(ErrorKind::Other));
+        return Err(io::Error::from(ErrorKind::Other));
     }
 
     Ok(())
@@ -272,7 +299,7 @@ fn get_object_header(decoded_content: &mut [u8], index: usize) -> (String, Strin
     (obj_type, obj_len)
 }
 
-fn get_object(object: &str, decoded_content: &mut Vec<u8>) -> std::io::Result<()> {
+fn get_object(object: &str, decoded_content: &mut Vec<u8>) -> io::Result<()> {
     let object_file = get_object_file(object);
 
     if let Ok(file) = File::open(object_file) {
@@ -303,7 +330,7 @@ fn bytes_to_string(content: &[u8]) -> String {
         })
 }
 
-fn decode_obj_content(file: File, decoded_content: &mut Vec<u8>) -> std::io::Result<()> {
+fn decode_obj_content(file: File, decoded_content: &mut Vec<u8>) -> io::Result<()> {
     let content: &mut Vec<u8> = &mut Vec::new();
     let mut reader = BufReader::new(file);
     let _ = reader.read_to_end(content);
@@ -344,7 +371,7 @@ fn get_object_file(obj_id: &str) -> PathBuf {
     obj_file
 }
 
-fn init_command(args: InitArgs) -> std::io::Result<()> {
+fn init_command(args: InitArgs) -> io::Result<()> {
     let (git_parent_dir, separate_parent_dir) =
         get_git_dirs(args.directory, args.separate_git_dir)?;
 
@@ -426,7 +453,7 @@ fn init_command(args: InitArgs) -> std::io::Result<()> {
 fn get_git_dirs(
     directory: Option<OsString>,
     separate_git_dir: Option<OsString>,
-) -> std::io::Result<(PathBuf, Option<PathBuf>)> {
+) -> io::Result<(PathBuf, Option<PathBuf>)> {
     let git_parent_dir = if let Some(dir) = directory {
         path::absolute(dir.to_str().unwrap()).unwrap()
     } else {
@@ -467,8 +494,8 @@ fn find_git_parent_dir() -> PathBuf {
 ///
 /// _NOTE_: since the Git config format is not standard (not INI not TOML) gotta do it myself
 ///
-/// _TODO_: load and merge the global git config if it exists
-fn load_git_config() -> std::io::Result<HashMap<String, String>> {
+/// _TODO_: load and merge the global git config if it exists, and be able to differentiate local/global/system
+fn load_git_config() -> io::Result<HashMap<String, String>> {
     let mut config = HashMap::new();
     if let Some(home_dir) = dirs::home_dir() {
         let git_config_path = home_dir.join(GIT_USER_CONFIG_FILE_NAME);
@@ -479,13 +506,12 @@ fn load_git_config() -> std::io::Result<HashMap<String, String>> {
             let mut section = "";
             for it in buf.split_terminator('\n') {
                 let line = it.trim();
-                if line.is_empty() || line.starts_with('#') {
+                if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
                     continue;
                 }
 
-                if line.starts_with('[') && line.ends_with(']') {
-                    section = line.strip_prefix('[').unwrap().strip_suffix(']').unwrap();
-
+                if let Some((_whole, matched)) = regex_captures!(r#"\[(.+)\]"#, line) {
+                    section = matched;
                     continue;
                 }
 
