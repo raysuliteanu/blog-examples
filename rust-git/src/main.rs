@@ -18,14 +18,14 @@ use crate::GitObjectType::{Blob, Commit, Tree};
 
 const GIT_DEFAULT_BRANCH_NAME: &str = "master";
 const GIT_DIR_NAME: &str = ".git";
-const GIT_OBJ_DIR_NAME: &str = ".git/objects";
-const GIT_OBJ_BRANCHES_DIR_NAME: &str = ".git/objects/branches";
-const GIT_OBJ_HOOKS_DIR_NAME: &str = ".git/objects/hooks";
-const GIT_OBJ_INFO_DIR_NAME: &str = ".git/objects/info";
-const GIT_OBJ_PACK_DIR_NAME: &str = ".git/objects/pack";
-const _GIT_REFS_DIR_NAME: &str = ".git/refs";
-const GIT_REFS_HEADS_DIR_NAME: &str = ".git/refs/heads";
-const GIT_REFS_TAGS_DIR_NAME: &str = ".git/refs/tags";
+const GIT_OBJ_DIR_NAME: &str = "objects";
+const GIT_OBJ_BRANCHES_DIR_NAME: &str = "objects/branches";
+const GIT_OBJ_HOOKS_DIR_NAME: &str = "objects/hooks";
+const GIT_OBJ_INFO_DIR_NAME: &str = "objects/info";
+const GIT_OBJ_PACK_DIR_NAME: &str = "objects/pack";
+const _GIT_REFS_DIR_NAME: &str = "refs";
+const GIT_REFS_HEADS_DIR_NAME: &str = "refs/heads";
+const GIT_REFS_TAGS_DIR_NAME: &str = "refs/tags";
 const GIT_USER_CONFIG_FILE_NAME: &str = ".gitconfig";
 
 lazy_static! {
@@ -36,8 +36,8 @@ lazy_static! {
     // since there of course is no .git dir to find the parent of yet!
     static ref GIT_PARENT_DIR: PathBuf = find_git_parent_dir();
 
-    static ref GIT_HEAD: PathBuf = PathBuf::from(".git/HEAD");
-    static ref GIT_REPO_CONFIG_FILE: PathBuf = PathBuf::from(".git/config");
+    static ref GIT_HEAD: PathBuf = PathBuf::from("HEAD");
+    static ref GIT_REPO_CONFIG_FILE: PathBuf = PathBuf::from("config");
 }
 
 #[derive(Debug)]
@@ -367,15 +367,14 @@ fn get_object_file(obj_id: &str) -> PathBuf {
 }
 
 fn init_command(args: InitArgs) -> io::Result<()> {
-    let (git_parent_dir, separate_parent_dir) =
-        get_git_dirs(args.directory, args.separate_git_dir)?;
+    let (git_parent_dir, separate_git_dir) = get_git_dirs(args.directory, args.separate_git_dir)?;
 
     debug!(
         "git dir: {:?}\tseparate dir: {:?}",
-        git_parent_dir, separate_parent_dir
+        git_parent_dir, separate_git_dir
     );
 
-    let actual_git_parent_dir = match separate_parent_dir {
+    let actual_git_parent_dir = match separate_git_dir {
         Some(dir) => {
             // make link to dir
             if !git_parent_dir.exists() {
@@ -389,13 +388,15 @@ fn init_command(args: InitArgs) -> io::Result<()> {
 
             dir
         }
-        None => git_parent_dir,
-    };
+        None => {
+            if !git_parent_dir.exists() {
+                debug!("creating {:?}", git_parent_dir);
+                fs::create_dir_all(&git_parent_dir)?;
+            }
 
-    if !actual_git_parent_dir.exists() {
-        debug!("creating {:?}", actual_git_parent_dir);
-        fs::create_dir_all(&actual_git_parent_dir)?;
-    }
+            git_parent_dir.join(GIT_DIR_NAME)
+        }
+    };
 
     for dir in [
         GIT_OBJ_BRANCHES_DIR_NAME,
