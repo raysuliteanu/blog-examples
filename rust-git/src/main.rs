@@ -3,7 +3,7 @@ use std::ffi::OsString;
 use std::fs::File;
 use std::io::{stdin, BufReader, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
-use std::{env, fs};
+use std::{env, fs, path};
 
 use clap::{command, Args, Parser, Subcommand};
 use flate2::bufread::ZlibDecoder;
@@ -21,15 +21,17 @@ const GIT_OBJ_BRANCHES_DIR_NAME: &str = ".git/objects/branches";
 const GIT_OBJ_HOOKS_DIR_NAME: &str = ".git/objects/hooks";
 const GIT_OBJ_INFO_DIR_NAME: &str = ".git/objects/info";
 const GIT_OBJ_PACK_DIR_NAME: &str = ".git/objects/pack";
-const GIT_REFS_DIR_NAME: &str = ".git/refs";
+const _GIT_REFS_DIR_NAME: &str = ".git/refs";
 const GIT_REFS_HEADS_DIR_NAME: &str = ".git/refs/heads";
 const GIT_REFS_TAGS_DIR_NAME: &str = ".git/refs/tags";
 const GIT_USER_CONFIG_FILE_NAME: &str = ".gitconfig";
 
 lazy_static! {
+    // NOTE: GIT_PARENT_DIR will panic if used during 'init' command processing
+    // since there of course is no .git dir to find the parent of yet!
     static ref GIT_PARENT_DIR: PathBuf = find_git_parent_dir();
-    static ref GIT_HEAD: PathBuf = GIT_PARENT_DIR.join(".git/HEAD");
-    static ref GIT_REPO_CONFIG_FILE: PathBuf = GIT_PARENT_DIR.join(".git/config");
+    static ref GIT_HEAD: PathBuf = PathBuf::from(".git/HEAD");
+    static ref GIT_REPO_CONFIG_FILE: PathBuf = PathBuf::from(".git/config");
     static ref GIT_CONFIG: HashMap<String, String> =
         load_git_config().unwrap_or_else(|_| HashMap::default());
 }
@@ -342,32 +344,57 @@ fn get_object_file(obj_id: &str) -> PathBuf {
     obj_file
 }
 
-// todo: support options in args
 fn init_command(args: InitArgs) -> std::io::Result<()> {
-    fs::create_dir(GIT_DIR_NAME)?;
-    trace!("created {GIT_DIR_NAME}");
-    fs::create_dir(GIT_OBJ_DIR_NAME)?;
-    trace!("created {GIT_OBJ_DIR_NAME}");
-    fs::create_dir(GIT_OBJ_BRANCHES_DIR_NAME)?;
-    trace!("created {GIT_OBJ_BRANCHES_DIR_NAME}");
-    fs::create_dir(GIT_OBJ_HOOKS_DIR_NAME)?;
-    trace!("created {GIT_OBJ_HOOKS_DIR_NAME}");
-    fs::create_dir(GIT_OBJ_INFO_DIR_NAME)?;
-    trace!("created {GIT_OBJ_INFO_DIR_NAME}");
-    fs::create_dir(GIT_OBJ_PACK_DIR_NAME)?;
-    trace!("created {GIT_OBJ_PACK_DIR_NAME}");
-    fs::create_dir(GIT_REFS_DIR_NAME)?;
-    trace!("created {GIT_REFS_DIR_NAME}");
-    fs::create_dir(GIT_REFS_TAGS_DIR_NAME)?;
-    trace!("created {GIT_REFS_TAGS_DIR_NAME}");
-    fs::create_dir(GIT_REFS_HEADS_DIR_NAME)?;
-    trace!("created {GIT_REFS_HEADS_DIR_NAME}");
+    let (git_parent_dir, separate_parent_dir) =
+        get_git_dirs(args.directory, args.separate_git_dir)?;
+
+    debug!(
+        "git dir: {:?}\tseparate dir: {:?}",
+        git_parent_dir, separate_parent_dir
+    );
+
+    let actual_git_parent_dir = match separate_parent_dir {
+        Some(dir) => {
+            // make link to dir
+            if !git_parent_dir.exists() {
+                debug!("creating {:?}", git_parent_dir);
+                fs::create_dir_all(&git_parent_dir)?;
+            }
+
+            let dot_git_file = git_parent_dir.join(GIT_DIR_NAME);
+            debug!("creating {:?}", dot_git_file);
+            fs::write(&dot_git_file, format!("gitdir: {}\n", dir.display()))?;
+
+            dir
+        }
+        None => git_parent_dir,
+    };
+
+    if !actual_git_parent_dir.exists() {
+        debug!("creating {:?}", actual_git_parent_dir);
+        fs::create_dir_all(&actual_git_parent_dir)?;
+    }
+
+    for dir in [
+        GIT_OBJ_BRANCHES_DIR_NAME,
+        GIT_OBJ_HOOKS_DIR_NAME,
+        GIT_OBJ_PACK_DIR_NAME,
+        GIT_OBJ_INFO_DIR_NAME,
+        GIT_REFS_TAGS_DIR_NAME,
+        GIT_REFS_HEADS_DIR_NAME,
+    ] {
+        let path = actual_git_parent_dir.join(dir);
+        fs::create_dir_all(&path)?;
+        trace!("created {}", &path.display());
+    }
+
+    let path_buf = actual_git_parent_dir.join(GIT_HEAD.as_path());
 
     if let Some(branch) = args.initial_branch {
-        fs::write(GIT_HEAD.as_path(), format!("ref: refs/heads/{branch}\n"))?;
+        fs::write(path_buf.as_path(), format!("ref: refs/heads/{branch}\n"))?;
     } else if GIT_CONFIG.contains_key("init.defaultBranch") {
         fs::write(
-            GIT_HEAD.as_path(),
+            path_buf.as_path(),
             format!(
                 "ref: refs/heads/{}\n",
                 GIT_CONFIG.get("init.defaultBranch").unwrap()
@@ -385,15 +412,31 @@ fn init_command(args: InitArgs) -> std::io::Result<()> {
 
     dot_git_config.push_str(format!("bare = {}\n\n", args.bare).as_str());
 
-    fs::write(GIT_REPO_CONFIG_FILE.as_path(), dot_git_config)?;
+    let config_file_path = actual_git_parent_dir.join(GIT_REPO_CONFIG_FILE.as_path());
+    fs::write(config_file_path.as_path(), dot_git_config)?;
 
     println!(
-        "Initialized empty Git repository in {}/{}",
-        env::current_dir()?.display(),
-        GIT_DIR_NAME
+        "Initialized empty Git repository in {}",
+        actual_git_parent_dir.display()
     );
 
     Ok(())
+}
+
+fn get_git_dirs(
+    directory: Option<OsString>,
+    separate_git_dir: Option<OsString>,
+) -> std::io::Result<(PathBuf, Option<PathBuf>)> {
+    let git_parent_dir = if let Some(dir) = directory {
+        path::absolute(dir.to_str().unwrap()).unwrap()
+    } else {
+        env::current_dir()?
+    };
+
+    let separate_parent_dir =
+        separate_git_dir.map(|dir| path::absolute(dir.to_str().unwrap()).unwrap());
+
+    Ok((git_parent_dir, separate_parent_dir))
 }
 
 fn find_git_parent_dir() -> PathBuf {
