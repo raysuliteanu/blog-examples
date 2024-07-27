@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs::File;
 use std::io::{stdin, BufReader, ErrorKind, Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::{env, fs, io, path};
 
 use clap::{command, Args, Parser, Subcommand};
