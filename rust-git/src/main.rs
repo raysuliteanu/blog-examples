@@ -104,26 +104,18 @@ struct ConfigArgs {
     local: bool,
 }
 
-/*
-       git hash-object [-t <type>] [-w] [--path=<file>|--no-filters] [--stdin [--literally]] [--] <file>...
-       git hash-object [-t <type>] [-w] --stdin-paths [--no-filters]
-*/
+// git hash-object [-t <type>] [-w] [--path=<file>|--no-filters] [--stdin [--literally]] [--] <file>...
+// git hash-object [-t <type>] [-w] --stdin-paths [--no-filters]
 #[derive(Debug, Args)]
 struct HashObjectArgs {
     #[arg(short = 't', default_value = "blob")]
     obj_type: String,
     #[arg(short = 'w', default_value = "false")]
     write_to_db: bool,
-    #[arg(long)]
-    path: Option<OsString>,
-    #[arg(long, default_value = "false")]
-    no_filters: bool,
     #[arg(long, default_value = "false")]
     stdin: bool,
     #[arg(long, default_value = "false")]
     literally: bool,
-    #[arg(long)]
-    stdin_paths: bool,
     #[arg(last = true)]
     file: Option<Vec<OsString>>,
 }
@@ -176,27 +168,23 @@ fn config_command(args: ConfigArgs) -> io::Result<()> {
 }
 
 fn hash_object_command(args: HashObjectArgs) -> io::Result<()> {
+    if args.obj_type != "blob" {
+        unimplemented!("only 'hash' object type is currently supported");
+    }
+
     if args.stdin {
         let mut stdin = stdin();
-        let mut buf_in = Vec::new();
-        let read = stdin.read_to_end(&mut buf_in)?;
-        let mut header = args.obj_type;
-        if header == "blob" {
-            header.push_str(format!(" {read}\0").as_str());
-        } else {
-            unimplemented!();
-        }
+        let mut input = Vec::new();
+        let read = stdin.read_to_end(&mut input)?;
 
-        let mut buf = Vec::from(header);
-        buf.append(&mut buf_in);
+        let obj_header = format!("{} {read}\0", args.obj_type);
+        let obj_header = obj_header.as_bytes();
+        let mut buf = Vec::with_capacity(obj_header.len() + input.len());
+        buf.append(&mut obj_header.to_vec());
+        buf.append(&mut input);
 
-        let mut hasher = Sha1::new();
-        hasher.update(&buf[..]);
-        let sha1_hash = hasher.finalize();
-
-        let encoded = encode_obj_content(&mut buf)?;
-
-        let hash = hex::encode(sha1_hash);
+        let hash = generate_hash(&buf);
+        let encoded = encode_obj_content(&buf)?;
 
         if args.write_to_db {
             write_object(&encoded, &hash)?;
@@ -204,31 +192,36 @@ fn hash_object_command(args: HashObjectArgs) -> io::Result<()> {
 
         println!("{}", hash);
     } else {
-        unimplemented!("not implemented yet")
+        debug!("{:?}", args);
+        unimplemented!("only stdin is currently supported")
     }
 
     Ok(())
+}
+
+fn generate_hash(buf: &[u8]) -> String {
+    let mut hasher = Sha1::new();
+    hasher.update(buf);
+    let sha1_hash = hasher.finalize();
+    hex::encode(sha1_hash)
 }
 
 fn write_object(encoded: &[u8], hash: &str) -> io::Result<()> {
     let (dir, name) = hash.split_at(2);
-    let full_dir = format!("{}/{}/{}", GIT_PARENT_DIR.display(), GIT_OBJ_DIR_NAME, dir);
-    let full_dir = full_dir.as_str();
-    debug!("writing to {full_dir}");
-    if !Path::new(full_dir).exists() {
-        debug!("creating full dir");
-        fs::create_dir(full_dir)?;
-    }
+    let git_object_dir = get_git_object_dir();
+    let full_dir = git_object_dir.join(dir);
+    let file_path = full_dir.join(name);
+    fs::create_dir_all(full_dir)?;
 
-    let file_path = Path::new(full_dir).join(name);
     debug!("writing to {}", file_path.display());
 
     let mut file = File::create(file_path)?;
     file.write_all(encoded)?;
+
     Ok(())
 }
 
-fn encode_obj_content(content: &mut [u8]) -> io::Result<Vec<u8>> {
+fn encode_obj_content(content: &[u8]) -> io::Result<Vec<u8>> {
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(content)?;
     let result = encoder.finish()?;
@@ -273,7 +266,7 @@ fn cat_file_command(args: CatFileArgs) -> io::Result<()> {
                     println!("{:0>6} {} {}    {}", mode, obj_type, hash, file);
                 }
             }
-            Commit => {}
+            Commit => unimplemented!("commit object type currently not supported"),
         }
     } else if args.obj_type {
         println!("{obj_type}");
@@ -469,6 +462,7 @@ fn find_git_parent_dir() -> PathBuf {
     loop {
         let git_dir = current_dir.join(GIT_DIR_NAME);
         if git_dir.is_dir() {
+            debug!("found .git dir: {:?}", git_dir.parent().unwrap());
             return git_dir.parent().unwrap().to_path_buf();
         }
 
@@ -528,4 +522,8 @@ fn get_config_pair(line: &str) -> (&str, &str) {
     let value = parts.next().unwrap().trim();
 
     (key, value)
+}
+
+fn get_git_object_dir() -> PathBuf {
+    GIT_PARENT_DIR.join(GIT_DIR_NAME).join(GIT_OBJ_DIR_NAME)
 }
