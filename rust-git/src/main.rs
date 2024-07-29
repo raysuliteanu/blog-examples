@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs::File;
-use std::io::{stdin, BufReader, ErrorKind, Read, Write};
+use std::io::{stdin, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::{env, fs, io, path};
 
@@ -49,7 +49,13 @@ pub enum GitObjectType {
 
 impl From<String> for GitObjectType {
     fn from(value: String) -> Self {
-        match value.as_str() {
+        GitObjectType::from(value.as_str())
+    }
+}
+
+impl From<&str> for GitObjectType {
+    fn from(value: &str) -> Self {
+        match value {
             "blob" => Blob,
             "tree" => Tree,
             "commit" => Commit,
@@ -117,7 +123,7 @@ struct HashObjectArgs {
     #[arg(long, default_value = "false")]
     literally: bool,
     #[arg(last = true)]
-    file: Option<Vec<OsString>>,
+    files: Option<Vec<OsString>>,
 }
 
 /*
@@ -169,32 +175,58 @@ fn config_command(args: ConfigArgs) -> io::Result<()> {
 
 fn hash_object_command(args: HashObjectArgs) -> io::Result<()> {
     if args.obj_type != "blob" {
-        unimplemented!("only 'hash' object type is currently supported");
+        unimplemented!("only 'blob' object type is currently supported");
     }
 
     if args.stdin {
-        let mut stdin = stdin();
-        let mut input = Vec::new();
-        let read = stdin.read_to_end(&mut input)?;
+        let stdin = stdin();
+        hash_object(&args, stdin)?;
+    } else if let Some(paths) = &args.files {
+        let files = paths
+            .iter()
+            .map(PathBuf::from)
+            .map(File::open)
+            .collect::<Vec<io::Result<File>>>();
 
-        let obj_header = format!("{} {read}\0", args.obj_type);
-        let obj_header = obj_header.as_bytes();
-        let mut buf = Vec::with_capacity(obj_header.len() + input.len());
-        buf.append(&mut obj_header.to_vec());
-        buf.append(&mut input);
-
-        let hash = generate_hash(&buf);
-        let encoded = encode_obj_content(&buf)?;
-
-        if args.write_to_db {
-            write_object(&encoded, &hash)?;
+        for file in files {
+            debug!("hash_object_command() processing: {:?}", file);
+            match file {
+                Ok(f) => {
+                    hash_object(&args, f)?;
+                }
+                Err(e) => return Err(e),
+            }
         }
-
-        println!("{}", hash);
     } else {
         debug!("{:?}", args);
-        unimplemented!("only stdin is currently supported")
+        unimplemented!("args not supported: {:?}", args);
+    };
+
+    Ok(())
+}
+
+fn read_content_to_hash(mut file: impl Read) -> io::Result<(Vec<u8>, usize)> {
+    let mut input = Vec::new();
+    let read = file.read_to_end(&mut input)?;
+    Ok((input, read))
+}
+
+fn hash_object(args: &HashObjectArgs, file: impl Read) -> io::Result<()> {
+    let (mut input, read) = read_content_to_hash(file)?;
+    let obj_header = format!("{} {read}\0", args.obj_type);
+    let obj_header = obj_header.as_bytes();
+    let mut buf = Vec::with_capacity(obj_header.len() + input.len());
+    buf.append(&mut obj_header.to_vec());
+    buf.append(&mut input);
+
+    let hash = generate_hash(&buf);
+    let encoded = encode_obj_content(&buf)?;
+
+    if args.write_to_db {
+        write_object(&encoded, &hash)?;
     }
+
+    println!("{}", hash);
 
     Ok(())
 }
@@ -204,6 +236,13 @@ fn generate_hash(buf: &[u8]) -> String {
     hasher.update(buf);
     let sha1_hash = hasher.finalize();
     hex::encode(sha1_hash)
+}
+
+fn encode_obj_content(content: &[u8]) -> io::Result<Vec<u8>> {
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(content)?;
+    let result = encoder.finish()?;
+    Ok(result)
 }
 
 fn write_object(encoded: &[u8], hash: &str) -> io::Result<()> {
@@ -221,17 +260,8 @@ fn write_object(encoded: &[u8], hash: &str) -> io::Result<()> {
     Ok(())
 }
 
-fn encode_obj_content(content: &[u8]) -> io::Result<Vec<u8>> {
-    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(content)?;
-    let result = encoder.finish()?;
-    Ok(result)
-}
-
 fn cat_file_command(args: CatFileArgs) -> io::Result<()> {
-    let decoded_content = &mut Vec::new();
-
-    get_object(&args.object, decoded_content)?;
+    let decoded_content = &mut get_object(&args.object)?;
 
     let index = find_null_byte_index(decoded_content);
 
@@ -241,40 +271,49 @@ fn cat_file_command(args: CatFileArgs) -> io::Result<()> {
 
     if args.pretty {
         match GitObjectType::from(obj_type) {
-            Blob => {
+            Blob | Commit => {
                 print!("{}", bytes_to_string(content));
             }
             Tree => {
-                // each line of content is of the form
-                // [filemode] [filename]\0[sizeof(sha1_hash)==20b]
-                let mut consumed = 0usize;
-                let len = obj_len.as_str().parse::<usize>().expect("invalid length");
-                while consumed < len {
-                    let index = find_null_byte_index(&content[consumed..]);
-                    let end = consumed + index;
-                    assert!(end < content.len());
-                    let tree_row_prefix = &mut content[consumed..end].split(|x| *x == b' ');
-                    let mode = bytes_to_string(tree_row_prefix.next().unwrap());
-                    let file = bytes_to_string(tree_row_prefix.next().unwrap());
-                    consumed += index + 1;
-                    let hash = hex::encode(&content[consumed..consumed + 20]);
-                    consumed += 20;
-                    let tmp_buf = &mut Vec::new();
-                    get_object(hash.as_str(), tmp_buf)?;
-                    let index = find_null_byte_index(tmp_buf);
-                    let (obj_type, _) = get_object_header(tmp_buf, index);
-                    println!("{:0>6} {} {}    {}", mode, obj_type, hash, file);
-                }
+                handle_cat_file_tree_object(obj_len, content)?;
             }
-            Commit => unimplemented!("commit object type currently not supported"),
         }
     } else if args.obj_type {
         println!("{obj_type}");
     } else if args.show_size {
         println!("{obj_len}");
     } else {
-        // todo: work on the errors
-        return Err(io::Error::from(ErrorKind::Other));
+        unimplemented!("only stdin is currently supported")
+    }
+
+    Ok(())
+}
+
+/// each line of content is of the form
+/// `[filemode][SP][filename]\0[hash-bytes]`
+/// where SP is ASCII space (0x20) and where hash-bytes is the SHA-1 hash, a
+/// fixed 20 bytes in length; so the next "line" starts immediately after that
+/// e.g.
+/// ```
+/// [filemode][SP][filename]\0[hash-bytes][filemode][SP][filename]\0[hash-bytes]
+/// ```
+fn handle_cat_file_tree_object(obj_len: String, content: &[u8]) -> io::Result<()> {
+    let mut consumed = 0usize;
+    let len = obj_len.as_str().parse::<usize>().expect("invalid length");
+    while consumed < len {
+        let index = find_null_byte_index(&content[consumed..]);
+        let end = consumed + index;
+        assert!(end < content.len());
+        let tree_row_prefix = &mut content[consumed..end].split(|x| *x == b' ');
+        let mode = bytes_to_string(tree_row_prefix.next().unwrap());
+        let file = bytes_to_string(tree_row_prefix.next().unwrap());
+        consumed += index + 1; // +1 for SP (0x20) char
+        let hash = hex::encode(&content[consumed..consumed + 20]);
+        consumed += 20; // sizeof SHA-1 hash
+        let obj_contents = &mut get_object(hash.as_str())?;
+        let index = find_null_byte_index(obj_contents);
+        let (obj_type, _) = get_object_header(obj_contents, index);
+        println!("{:0>6} {} {}    {}", mode, obj_type, hash, file);
     }
 
     Ok(())
@@ -285,16 +324,6 @@ fn get_object_header(decoded_content: &mut [u8], index: usize) -> (String, Strin
     let obj_type = bytes_to_string(header.next().unwrap());
     let obj_len = bytes_to_string(header.next().unwrap());
     (obj_type, obj_len)
-}
-
-fn get_object(object: &str, decoded_content: &mut Vec<u8>) -> io::Result<()> {
-    let object_file = get_object_file(object);
-
-    if let Ok(file) = File::open(object_file) {
-        decode_obj_content(file, decoded_content)?;
-    }
-
-    Ok(())
 }
 
 fn find_null_byte_index(content: &[u8]) -> usize {
@@ -318,14 +347,23 @@ fn bytes_to_string(content: &[u8]) -> String {
         })
 }
 
-fn decode_obj_content(file: File, decoded_content: &mut Vec<u8>) -> io::Result<()> {
+fn get_object(object: &str) -> io::Result<Vec<u8>> {
+    let object_file = get_object_file(object);
+    match File::open(object_file) {
+        Ok(file) => Ok(decode_obj_content(file)?),
+        Err(e) => Err(e),
+    }
+}
+
+fn decode_obj_content(file: File) -> io::Result<Vec<u8>> {
     let content: &mut Vec<u8> = &mut Vec::new();
     let mut reader = BufReader::new(file);
-    let _ = reader.read_to_end(content);
+    let _ = reader.read_to_end(content)?;
     let mut decoder = ZlibDecoder::new(&content[..]);
-    decoder.read_to_end(decoded_content)?;
+    let mut decoded_content: Vec<u8> = Vec::new();
+    decoder.read_to_end(&mut decoded_content)?;
 
-    Ok(())
+    Ok(decoded_content)
 }
 
 fn get_object_file(obj_id: &str) -> PathBuf {
@@ -333,7 +371,10 @@ fn get_object_file(obj_id: &str) -> PathBuf {
         panic!("Not a valid object name {obj_id}")
     }
     let (dir, id) = obj_id.split_at(2);
-    let obj_dir = GIT_PARENT_DIR.join(GIT_OBJ_DIR_NAME).join(dir);
+    let obj_dir = GIT_PARENT_DIR
+        .join(GIT_DIR_NAME)
+        .join(GIT_OBJ_DIR_NAME)
+        .join(dir);
     if !obj_dir.exists() || !obj_dir.is_dir() {
         debug!("can't access {}", obj_dir.display());
         panic!("Not a valid object name {obj_id}")
