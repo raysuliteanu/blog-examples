@@ -249,25 +249,7 @@ fn cat_file_command(args: CatFileArgs) -> io::Result<()> {
                 print!("{}", bytes_to_string(content));
             }
             Tree => {
-                // each line of content is of the form
-                // [filemode] [filename]\0[sizeof(sha1_hash)==20b]
-                let mut consumed = 0usize;
-                let len = obj_len.as_str().parse::<usize>().expect("invalid length");
-                while consumed < len {
-                    let index = find_null_byte_index(&content[consumed..]);
-                    let end = consumed + index;
-                    assert!(end < content.len());
-                    let tree_row_prefix = &mut content[consumed..end].split(|x| *x == b' ');
-                    let mode = bytes_to_string(tree_row_prefix.next().unwrap());
-                    let file = bytes_to_string(tree_row_prefix.next().unwrap());
-                    consumed += index + 1;
-                    let hash = hex::encode(&content[consumed..consumed + 20]);
-                    consumed += 20;
-                    let tmp_buf = &mut get_object(hash.as_str())?;
-                    let index = find_null_byte_index(tmp_buf);
-                    let (obj_type, _) = get_object_header(tmp_buf, index);
-                    println!("{:0>6} {} {}    {}", mode, obj_type, hash, file);
-                }
+                handle_cat_file_tree_object(&obj_len, &content)?;
             }
         }
     } else if args.obj_type {
@@ -276,6 +258,36 @@ fn cat_file_command(args: CatFileArgs) -> io::Result<()> {
         println!("{obj_len}");
     } else {
         unimplemented!("only stdin is currently supported")
+    }
+
+    Ok(())
+}
+
+/// each line of content is of the form
+/// `[filemode][SP][filename]\0[hash-bytes]`
+/// where SP is ASCII space (0x20) and where hash-bytes is the SHA-1 hash, a
+/// fixed 20 bytes in length; so the next "line" starts immediately after that
+/// e.g.
+/// ```
+/// [filemode][SP][filename]\0[hash-bytes][filemode][SP][filename]\0[hash-bytes]
+/// ```
+fn handle_cat_file_tree_object(obj_len: &String, content: &&[u8]) -> io::Result<()> {
+    let mut consumed = 0usize;
+    let len = obj_len.as_str().parse::<usize>().expect("invalid length");
+    while consumed < len {
+        let index = find_null_byte_index(&content[consumed..]);
+        let end = consumed + index;
+        assert!(end < content.len());
+        let tree_row_prefix = &mut content[consumed..end].split(|x| *x == b' ');
+        let mode = bytes_to_string(tree_row_prefix.next().unwrap());
+        let file = bytes_to_string(tree_row_prefix.next().unwrap());
+        consumed += index + 1; // +1 for SP (0x20) char
+        let hash = hex::encode(&content[consumed..consumed + 20]);
+        consumed += 20; // sizeof SHA-1 hash
+        let obj_contents = &mut get_object(hash.as_str())?;
+        let index = find_null_byte_index(obj_contents);
+        let (obj_type, _) = get_object_header(obj_contents, index);
+        println!("{:0>6} {} {}    {}", mode, obj_type, hash, file);
     }
 
     Ok(())
