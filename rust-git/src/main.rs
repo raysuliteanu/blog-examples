@@ -123,7 +123,7 @@ struct HashObjectArgs {
     #[arg(long, default_value = "false")]
     literally: bool,
     #[arg(last = true)]
-    file: Option<Vec<OsString>>,
+    files: Option<Vec<OsString>>,
 }
 
 /*
@@ -175,32 +175,58 @@ fn config_command(args: ConfigArgs) -> io::Result<()> {
 
 fn hash_object_command(args: HashObjectArgs) -> io::Result<()> {
     if args.obj_type != "blob" {
-        unimplemented!("only 'hash' object type is currently supported");
+        unimplemented!("only 'blob' object type is currently supported");
     }
 
     if args.stdin {
-        let mut stdin = stdin();
-        let mut input = Vec::new();
-        let read = stdin.read_to_end(&mut input)?;
+        let stdin = stdin();
+        hash_object(&args, stdin)?;
+    } else if let Some(paths) = &args.files {
+        let files = paths
+            .iter()
+            .map(PathBuf::from)
+            .map(File::open)
+            .collect::<Vec<io::Result<File>>>();
 
-        let obj_header = format!("{} {read}\0", args.obj_type);
-        let obj_header = obj_header.as_bytes();
-        let mut buf = Vec::with_capacity(obj_header.len() + input.len());
-        buf.append(&mut obj_header.to_vec());
-        buf.append(&mut input);
-
-        let hash = generate_hash(&buf);
-        let encoded = encode_obj_content(&buf)?;
-
-        if args.write_to_db {
-            write_object(&encoded, &hash)?;
+        for file in files {
+            debug!("hash_object_command() processing: {:?}", file);
+            match file {
+                Ok(f) => {
+                    hash_object(&args, f)?;
+                }
+                Err(e) => return Err(e),
+            }
         }
-
-        println!("{}", hash);
     } else {
         debug!("{:?}", args);
-        unimplemented!("only stdin is currently supported")
+        unimplemented!("args not supported: {:?}", args);
+    };
+
+    Ok(())
+}
+
+fn read_content_to_hash(mut file: impl Read) -> io::Result<(Vec<u8>, usize)> {
+    let mut input = Vec::new();
+    let read = file.read_to_end(&mut input)?;
+    Ok((input, read))
+}
+
+fn hash_object(args: &HashObjectArgs, file: impl Read) -> io::Result<()> {
+    let (mut input, read) = read_content_to_hash(file)?;
+    let obj_header = format!("{} {read}\0", args.obj_type);
+    let obj_header = obj_header.as_bytes();
+    let mut buf = Vec::with_capacity(obj_header.len() + input.len());
+    buf.append(&mut obj_header.to_vec());
+    buf.append(&mut input);
+
+    let hash = generate_hash(&buf);
+    let encoded = encode_obj_content(&buf)?;
+
+    if args.write_to_db {
+        write_object(&encoded, &hash)?;
     }
+
+    println!("{}", hash);
 
     Ok(())
 }
@@ -249,7 +275,7 @@ fn cat_file_command(args: CatFileArgs) -> io::Result<()> {
                 print!("{}", bytes_to_string(content));
             }
             Tree => {
-                handle_cat_file_tree_object(&obj_len, &content)?;
+                handle_cat_file_tree_object(obj_len, content)?;
             }
         }
     } else if args.obj_type {
@@ -271,7 +297,7 @@ fn cat_file_command(args: CatFileArgs) -> io::Result<()> {
 /// ```
 /// [filemode][SP][filename]\0[hash-bytes][filemode][SP][filename]\0[hash-bytes]
 /// ```
-fn handle_cat_file_tree_object(obj_len: &String, content: &&[u8]) -> io::Result<()> {
+fn handle_cat_file_tree_object(obj_len: String, content: &[u8]) -> io::Result<()> {
     let mut consumed = 0usize;
     let len = obj_len.as_str().parse::<usize>().expect("invalid length");
     while consumed < len {
