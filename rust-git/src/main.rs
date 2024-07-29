@@ -235,9 +235,7 @@ fn write_object(encoded: &[u8], hash: &str) -> io::Result<()> {
 }
 
 fn cat_file_command(args: CatFileArgs) -> io::Result<()> {
-    let decoded_content = &mut Vec::new();
-
-    get_object(&args.object, decoded_content)?;
+    let decoded_content = &mut get_object(&args.object)?;
 
     let index = find_null_byte_index(decoded_content);
 
@@ -265,8 +263,7 @@ fn cat_file_command(args: CatFileArgs) -> io::Result<()> {
                     consumed += index + 1;
                     let hash = hex::encode(&content[consumed..consumed + 20]);
                     consumed += 20;
-                    let tmp_buf = &mut Vec::new();
-                    get_object(hash.as_str(), tmp_buf)?;
+                    let tmp_buf = &mut get_object(hash.as_str())?;
                     let index = find_null_byte_index(tmp_buf);
                     let (obj_type, _) = get_object_header(tmp_buf, index);
                     println!("{:0>6} {} {}    {}", mode, obj_type, hash, file);
@@ -293,16 +290,6 @@ fn get_object_header(decoded_content: &mut [u8], index: usize) -> (String, Strin
     (obj_type, obj_len)
 }
 
-fn get_object(object: &str, decoded_content: &mut Vec<u8>) -> io::Result<()> {
-    let object_file = get_object_file(object);
-
-    if let Ok(file) = File::open(object_file) {
-        decode_obj_content(file, decoded_content)?;
-    }
-
-    Ok(())
-}
-
 fn find_null_byte_index(content: &[u8]) -> usize {
     debug!("{:?}", content);
     for (i, v) in content.iter().enumerate() {
@@ -324,14 +311,23 @@ fn bytes_to_string(content: &[u8]) -> String {
         })
 }
 
-fn decode_obj_content(file: File, decoded_content: &mut Vec<u8>) -> io::Result<()> {
+fn get_object(object: &str) -> io::Result<Vec<u8>> {
+    let object_file = get_object_file(object);
+    match File::open(object_file) {
+        Ok(file) => Ok(decode_obj_content(file)?),
+        Err(e) => Err(e),
+    }
+}
+
+fn decode_obj_content(file: File) -> io::Result<Vec<u8>> {
     let content: &mut Vec<u8> = &mut Vec::new();
     let mut reader = BufReader::new(file);
-    let _ = reader.read_to_end(content);
+    let _ = reader.read_to_end(content)?;
     let mut decoder = ZlibDecoder::new(&content[..]);
-    decoder.read_to_end(decoded_content)?;
+    let mut decoded_content: Vec<u8> = Vec::new();
+    decoder.read_to_end(&mut decoded_content)?;
 
-    Ok(())
+    Ok(decoded_content)
 }
 
 fn get_object_file(obj_id: &str) -> PathBuf {
@@ -339,7 +335,10 @@ fn get_object_file(obj_id: &str) -> PathBuf {
         panic!("Not a valid object name {obj_id}")
     }
     let (dir, id) = obj_id.split_at(2);
-    let obj_dir = GIT_PARENT_DIR.join(GIT_OBJ_DIR_NAME).join(dir);
+    let obj_dir = GIT_PARENT_DIR
+        .join(GIT_DIR_NAME)
+        .join(GIT_OBJ_DIR_NAME)
+        .join(dir);
     if !obj_dir.exists() || !obj_dir.is_dir() {
         debug!("can't access {}", obj_dir.display());
         panic!("Not a valid object name {obj_id}")
