@@ -348,7 +348,7 @@ fn bytes_to_string(content: &[u8]) -> String {
 }
 
 fn get_object(object: &str) -> io::Result<Vec<u8>> {
-    let object_file = get_object_file(object);
+    let object_file = find_object_file(object);
     match File::open(object_file) {
         Ok(file) => Ok(decode_obj_content(file)?),
         Err(e) => Err(e),
@@ -366,24 +366,21 @@ fn decode_obj_content(file: File) -> io::Result<Vec<u8>> {
     Ok(decoded_content)
 }
 
-fn get_object_file(obj_id: &str) -> PathBuf {
+fn find_object_file(obj_id: &str) -> PathBuf {
     if obj_id.len() < 3 {
         panic!("Not a valid object name {obj_id}")
     }
-    let (dir, id) = obj_id.split_at(2);
-    let obj_dir = GIT_PARENT_DIR
-        .join(GIT_DIR_NAME)
-        .join(GIT_OBJ_DIR_NAME)
-        .join(dir);
-    if !obj_dir.exists() || !obj_dir.is_dir() {
-        debug!("can't access {}", obj_dir.display());
+    let (dir_name, id) = obj_id.split_at(2);
+    let dir = get_git_object_dir().join(dir_name);
+    if !dir.exists() || !dir.is_dir() {
+        debug!("can't access {}", dir.display());
         panic!("Not a valid object name {obj_id}")
     }
 
-    let mut obj_file = obj_dir.join(id);
-    if !obj_file.exists() || !obj_file.is_file() {
+    let mut file = dir.join(id);
+    if !file.exists() || !file.is_file() {
         // maybe not a full hash so do a partial match
-        for entry in obj_dir
+        for entry in dir
             .read_dir()
             .unwrap_or_else(|_| panic!("Not a valid object name {obj_id}"))
             .flatten()
@@ -391,13 +388,13 @@ fn get_object_file(obj_id: &str) -> PathBuf {
             let os_string = entry.file_name();
             let filename = os_string.to_str().unwrap();
             if filename.starts_with(id) {
-                obj_file = obj_dir.join(filename);
+                file = dir.join(filename);
             }
         }
     }
 
-    debug!("found {:?}", obj_file);
-    obj_file
+    debug!("found {:?}", file);
+    file
 }
 
 fn init_command(args: InitArgs) -> io::Result<()> {
