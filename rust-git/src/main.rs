@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs::File;
-use std::io::{stdin, BufReader, ErrorKind, Read, Write};
+use std::io::{stdin, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::{env, fs, io, path};
 
@@ -245,7 +245,7 @@ fn cat_file_command(args: CatFileArgs) -> io::Result<()> {
 
     if args.pretty {
         match GitObjectType::from(obj_type) {
-            Blob => {
+            Blob | Commit => {
                 print!("{}", bytes_to_string(content));
             }
             Tree => {
@@ -269,15 +269,13 @@ fn cat_file_command(args: CatFileArgs) -> io::Result<()> {
                     println!("{:0>6} {} {}    {}", mode, obj_type, hash, file);
                 }
             }
-            Commit => unimplemented!("commit object type currently not supported"),
         }
     } else if args.obj_type {
         println!("{obj_type}");
     } else if args.show_size {
         println!("{obj_len}");
     } else {
-        // todo: work on the errors
-        return Err(io::Error::from(ErrorKind::Other));
+        unimplemented!("only stdin is currently supported")
     }
 
     Ok(())
