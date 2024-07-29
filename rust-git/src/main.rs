@@ -49,7 +49,13 @@ pub enum GitObjectType {
 
 impl From<String> for GitObjectType {
     fn from(value: String) -> Self {
-        match value.as_str() {
+        GitObjectType::from(value.as_str())
+    }
+}
+
+impl From<&str> for GitObjectType {
+    fn from(value: &str) -> Self {
+        match value {
             "blob" => Blob,
             "tree" => Tree,
             "commit" => Commit,
@@ -206,6 +212,13 @@ fn generate_hash(buf: &[u8]) -> String {
     hex::encode(sha1_hash)
 }
 
+fn encode_obj_content(content: &[u8]) -> io::Result<Vec<u8>> {
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(content)?;
+    let result = encoder.finish()?;
+    Ok(result)
+}
+
 fn write_object(encoded: &[u8], hash: &str) -> io::Result<()> {
     let (dir, name) = hash.split_at(2);
     let git_object_dir = get_git_object_dir();
@@ -219,13 +232,6 @@ fn write_object(encoded: &[u8], hash: &str) -> io::Result<()> {
     file.write_all(encoded)?;
 
     Ok(())
-}
-
-fn encode_obj_content(content: &[u8]) -> io::Result<Vec<u8>> {
-    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(content)?;
-    let result = encoder.finish()?;
-    Ok(result)
 }
 
 fn cat_file_command(args: CatFileArgs) -> io::Result<()> {
