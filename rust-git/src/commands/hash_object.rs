@@ -1,14 +1,16 @@
-use crate::util::get_git_object_dir;
-use clap::Args;
-use flate2::write::ZlibEncoder;
-use flate2::Compression;
-use log::debug;
-use sha1::{Digest, Sha1};
 use std::ffi::OsString;
 use std::fs::File;
 use std::io::{stdin, Read, Write};
 use std::path::PathBuf;
 use std::{fs, io};
+
+use clap::Args;
+use flate2::write::ZlibEncoder;
+use flate2::Compression;
+use log::debug;
+use sha1::{Digest, Sha1};
+
+use crate::util;
 
 #[derive(Debug, Args)]
 pub(crate) struct HashObjectArgs {
@@ -98,7 +100,7 @@ fn encode_obj_content(content: &[u8]) -> io::Result<Vec<u8>> {
 
 fn write_object(encoded: &[u8], hash: &str) -> io::Result<()> {
     let (dir, name) = hash.split_at(2);
-    let git_object_dir = get_git_object_dir();
+    let git_object_dir = util::get_git_object_dir();
     let full_dir = git_object_dir.join(dir);
     let file_path = full_dir.join(name);
     fs::create_dir_all(full_dir)?;

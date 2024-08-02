@@ -1,13 +1,16 @@
+use std::ffi::OsString;
+use std::{fs, io};
+
+use clap::Args;
+use log::{debug, trace};
+
 use crate::commands::config::GIT_CONFIG;
+use crate::util;
 use crate::util::{
-    get_git_dirs, GIT_DEFAULT_BRANCH_NAME, GIT_DIR_NAME, GIT_HEAD, GIT_OBJ_BRANCHES_DIR_NAME,
+    GIT_DEFAULT_BRANCH_NAME, GIT_DIR_NAME, GIT_HEAD, GIT_OBJ_BRANCHES_DIR_NAME,
     GIT_OBJ_HOOKS_DIR_NAME, GIT_OBJ_INFO_DIR_NAME, GIT_OBJ_PACK_DIR_NAME, GIT_REFS_HEADS_DIR_NAME,
     GIT_REFS_TAGS_DIR_NAME, GIT_REPO_CONFIG_FILE,
 };
-use clap::Args;
-use log::{debug, trace};
-use std::ffi::OsString;
-use std::{fs, io};
 
 #[derive(Debug, Args)]
 pub struct InitArgs {
@@ -29,7 +32,8 @@ pub struct InitArgs {
 }
 
 pub(crate) fn init_command(args: InitArgs) -> io::Result<()> {
-    let (git_parent_dir, separate_git_dir) = get_git_dirs(args.directory, args.separate_git_dir)?;
+    let (git_parent_dir, separate_git_dir) =
+        util::get_git_dirs(args.directory, args.separate_git_dir)?;
 
     debug!(
         "git dir: {:?}\tseparate dir: {:?}",

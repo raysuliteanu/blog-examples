@@ -1,8 +1,9 @@
-use crate::util::{
-    bytes_to_string, find_null_byte_index, get_object, get_object_header, GitObjectType,
-};
-use clap::Args;
 use std::io;
+
+use clap::Args;
+
+use crate::util;
+use crate::util::GitObjectType;
 
 #[derive(Debug, Args)]
 pub(crate) struct CatFileArgs {
@@ -20,18 +21,18 @@ pub(crate) struct CatFileArgs {
 }
 
 pub(crate) fn cat_file_command(args: CatFileArgs) -> io::Result<()> {
-    let decoded_content = &mut get_object(&args.object)?;
+    let decoded_content = &mut util::get_object(&args.object)?;
 
-    let index = find_null_byte_index(decoded_content);
+    let index = util::find_null_byte_index(decoded_content);
 
-    let (obj_type, obj_len) = get_object_header(decoded_content, index);
+    let (obj_type, obj_len) = util::get_object_header(decoded_content, index);
 
     let content = &decoded_content[index + 1..];
 
     if args.pretty {
         match GitObjectType::from(obj_type) {
             GitObjectType::Blob | GitObjectType::Commit => {
-                print!("{}", bytes_to_string(content));
+                print!("{}", util::bytes_to_string(content));
             }
             GitObjectType::Tree => {
                 handle_cat_file_tree_object(obj_len, content)?;
@@ -60,18 +61,18 @@ fn handle_cat_file_tree_object(obj_len: String, content: &[u8]) -> io::Result<()
     let mut consumed = 0usize;
     let len = obj_len.as_str().parse::<usize>().expect("invalid length");
     while consumed < len {
-        let index = find_null_byte_index(&content[consumed..]);
+        let index = util::find_null_byte_index(&content[consumed..]);
         let end = consumed + index;
         assert!(end < content.len());
         let tree_row_prefix = &mut content[consumed..end].split(|x| *x == b' ');
-        let mode = bytes_to_string(tree_row_prefix.next().unwrap());
-        let file = bytes_to_string(tree_row_prefix.next().unwrap());
+        let mode = util::bytes_to_string(tree_row_prefix.next().unwrap());
+        let file = util::bytes_to_string(tree_row_prefix.next().unwrap());
         consumed += index + 1; // +1 for SP (0x20) char
         let hash = hex::encode(&content[consumed..consumed + 20]);
         consumed += 20; // sizeof SHA-1 hash
-        let obj_contents = &mut get_object(hash.as_str())?;
-        let index = find_null_byte_index(obj_contents);
-        let (obj_type, _) = get_object_header(obj_contents, index);
+        let obj_contents = &mut util::get_object(hash.as_str())?;
+        let index = util::find_null_byte_index(obj_contents);
+        let (obj_type, _) = util::get_object_header(obj_contents, index);
         println!("{:0>6} {} {}    {}", mode, obj_type, hash, file);
     }
 

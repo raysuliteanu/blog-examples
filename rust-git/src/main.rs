@@ -1,10 +1,11 @@
-use clap::Parser;
 use std::io;
 
-use crate::commands::cat_file::cat_file_command;
-use crate::commands::config::config_command;
-use crate::commands::hash_object::hash_object_command;
-use crate::commands::init::init_command;
+use clap::Parser;
+
+use crate::commands::cat_file;
+use crate::commands::config;
+use crate::commands::hash_object;
+use crate::commands::init;
 use crate::commands::{Commands, Git};
 
 mod commands;
@@ -16,9 +17,9 @@ fn main() -> io::Result<()> {
     let git = Git::parse();
 
     match git.command {
-        Commands::Init(args) => init_command(args),
-        Commands::CatFile(args) => cat_file_command(args),
-        Commands::HashObject(args) => hash_object_command(args),
-        Commands::Config(args) => config_command(args),
+        Commands::Init(args) => init::init_command(args),
+        Commands::CatFile(args) => cat_file::cat_file_command(args),
+        Commands::HashObject(args) => hash_object::hash_object_command(args),
+        Commands::Config(args) => config::config_command(args),
     }
 }
