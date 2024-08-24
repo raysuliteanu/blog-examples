@@ -1,3 +1,4 @@
+use crate::commands::GitCommandResult;
 use clap::Args;
 use lazy_regex::regex_captures;
 use lazy_static::lazy_static;
@@ -27,7 +28,7 @@ pub(crate) struct ConfigArgs {
     pub(crate) local: bool,
 }
 
-pub(crate) fn config_command(args: ConfigArgs) -> io::Result<()> {
+pub(crate) fn config_command(args: ConfigArgs) -> GitCommandResult {
     if args.list {
         // todo: filter by local/system/global; if none, print all
         GIT_CONFIG

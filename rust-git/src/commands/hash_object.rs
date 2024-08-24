@@ -4,13 +4,13 @@ use std::io::{stdin, Read, Write};
 use std::path::PathBuf;
 use std::{fs, io};
 
+use crate::commands::{GitCommandResult, GitError};
+use crate::util;
 use clap::Args;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 use log::debug;
 use sha1::{Digest, Sha1};
-
-use crate::util;
 
 #[derive(Debug, Args)]
 pub(crate) struct HashObjectArgs {
@@ -26,7 +26,7 @@ pub(crate) struct HashObjectArgs {
     pub(crate) files: Option<Vec<OsString>>,
 }
 
-pub(crate) fn hash_object_command(args: HashObjectArgs) -> io::Result<()> {
+pub(crate) fn hash_object_command(args: HashObjectArgs) -> GitCommandResult {
     if args.obj_type != "blob" {
         unimplemented!("only 'blob' object type is currently supported");
     }
@@ -47,7 +47,7 @@ pub(crate) fn hash_object_command(args: HashObjectArgs) -> io::Result<()> {
                 Ok(f) => {
                     hash_object(&args, f)?;
                 }
-                Err(e) => return Err(e),
+                Err(e) => return Err(GitError::Io { source: e }),
             }
         }
     } else {
@@ -84,9 +84,9 @@ fn hash_object(args: &HashObjectArgs, file: impl Read) -> io::Result<()> {
     Ok(())
 }
 
-fn generate_hash(buf: &[u8]) -> String {
+fn generate_hash(content: &[u8]) -> String {
     let mut hasher = Sha1::new();
-    hasher.update(buf);
+    hasher.update(content);
     let sha1_hash = hasher.finalize();
     hex::encode(sha1_hash)
 }

@@ -1,3 +1,4 @@
+use crate::commands::{GitError, GitResult};
 use flate2::bufread::ZlibDecoder;
 use lazy_static::lazy_static;
 use log::debug;
@@ -5,7 +6,7 @@ use std::ffi::OsString;
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::PathBuf;
-use std::{env, io, path};
+use std::{env, path};
 
 pub(crate) const GIT_DEFAULT_BRANCH_NAME: &str = "master";
 pub(crate) const GIT_DIR_NAME: &str = ".git";
@@ -54,9 +55,9 @@ impl From<&str> for GitObjectType {
 pub(crate) fn get_git_dirs(
     directory: Option<OsString>,
     separate_git_dir: Option<OsString>,
-) -> io::Result<(PathBuf, Option<PathBuf>)> {
+) -> GitResult<(PathBuf, Option<PathBuf>)> {
     let git_parent_dir = if let Some(dir) = directory {
-        path::absolute(dir.to_str().unwrap()).unwrap()
+        path::absolute(dir.to_str().unwrap())?
     } else {
         env::current_dir()?
     };
@@ -118,15 +119,22 @@ pub(crate) fn bytes_to_string(content: &[u8]) -> String {
         })
 }
 
-pub(crate) fn get_object(object: &str) -> io::Result<Vec<u8>> {
+pub(crate) fn get_object(object: &str) -> GitResult<Vec<u8>> {
     let object_file = find_object_file(object);
-    match File::open(object_file) {
-        Ok(file) => Ok(decode_obj_content(file)?),
+    match object_file {
+        Ok(path) => Ok(get_object_from_path(path)?),
         Err(e) => Err(e),
     }
 }
 
-fn decode_obj_content(file: File) -> io::Result<Vec<u8>> {
+pub(crate) fn get_object_from_path(path: PathBuf) -> GitResult<Vec<u8>> {
+    match File::open(path) {
+        Ok(file) => Ok(decode_obj_content(file)?),
+        Err(e) => Err(GitError::Io { source: e }),
+    }
+}
+
+fn decode_obj_content(file: File) -> GitResult<Vec<u8>> {
     let content: &mut Vec<u8> = &mut Vec::new();
     let mut reader = BufReader::new(file);
     let _ = reader.read_to_end(content)?;
@@ -137,20 +145,26 @@ fn decode_obj_content(file: File) -> io::Result<Vec<u8>> {
     Ok(decoded_content)
 }
 
-fn find_object_file(obj_id: &str) -> PathBuf {
+pub(crate) fn find_object_file(obj_id: &str) -> GitResult<PathBuf> {
     if obj_id.len() < 3 {
-        panic!("Not a valid object name {obj_id}")
+        return Err(GitError::InvalidObjectId {
+            obj_id: String::from(obj_id),
+        });
     }
+
     let (dir_name, id) = obj_id.split_at(2);
     let dir = get_git_object_dir().join(dir_name);
     if !dir.exists() || !dir.is_dir() {
         debug!("can't access {}", dir.display());
-        panic!("Not a valid object name {obj_id}")
+        return Err(GitError::InvalidObjectId {
+            obj_id: String::from(obj_id),
+        });
     }
 
     let mut file = dir.join(id);
     if !file.exists() || !file.is_file() {
         // maybe not a full hash so do a partial match
+        let mut found = false;
         for entry in dir
             .read_dir()
             .unwrap_or_else(|_| panic!("Not a valid object name {obj_id}"))
@@ -160,10 +174,20 @@ fn find_object_file(obj_id: &str) -> PathBuf {
             let filename = os_string.to_str().unwrap();
             if filename.starts_with(id) {
                 file = dir.join(filename);
+                found = true;
+                break;
             }
+        }
+
+        if !found {
+            debug!("Not a valid object name {obj_id}");
+            return Err(GitError::InvalidObjectId {
+                obj_id: String::from(obj_id),
+            });
         }
     }
 
     debug!("found {:?}", file);
-    file
+
+    Ok(file)
 }

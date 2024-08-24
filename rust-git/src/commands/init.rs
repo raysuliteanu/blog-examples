@@ -1,10 +1,11 @@
 use std::ffi::OsString;
-use std::{fs, io};
+use std::fs;
 
 use clap::Args;
 use log::{debug, trace};
 
 use crate::commands::config::GIT_CONFIG;
+use crate::commands::GitCommandResult;
 use crate::util;
 use crate::util::{
     GIT_DEFAULT_BRANCH_NAME, GIT_DIR_NAME, GIT_HEAD, GIT_OBJ_BRANCHES_DIR_NAME,
@@ -31,7 +32,7 @@ pub struct InitArgs {
     pub(crate) directory: Option<OsString>,
 }
 
-pub(crate) fn init_command(args: InitArgs) -> io::Result<()> {
+pub(crate) fn init_command(args: InitArgs) -> GitCommandResult {
     let (git_parent_dir, separate_git_dir) =
         util::get_git_dirs(args.directory, args.separate_git_dir)?;
 

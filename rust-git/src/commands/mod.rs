@@ -3,6 +3,8 @@ use crate::commands::config::ConfigArgs;
 use crate::commands::hash_object::HashObjectArgs;
 use crate::commands::init::InitArgs;
 use clap::{Parser, Subcommand};
+use std::io;
+use thiserror::Error;
 
 pub(crate) mod cat_file;
 pub(crate) mod config;
@@ -21,4 +23,18 @@ pub(crate) enum Commands {
     CatFile(CatFileArgs),
     HashObject(HashObjectArgs),
     Config(ConfigArgs),
+}
+
+pub type GitResult<T> = Result<T, GitError>;
+pub type GitCommandResult = GitResult<()>;
+
+#[derive(Error, Debug)]
+pub(crate) enum GitError {
+    #[error("Not a valid object name {obj_id}")]
+    InvalidObjectId { obj_id: String },
+    #[error("I/O error")]
+    Io {
+        #[from]
+        source: io::Error,
+    },
 }

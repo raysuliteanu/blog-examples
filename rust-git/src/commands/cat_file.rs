@@ -1,27 +1,41 @@
-use std::io;
-
-use clap::Args;
-
+use crate::commands::{GitCommandResult, GitError, GitResult};
 use crate::util;
 use crate::util::GitObjectType;
+use clap::Args;
 
 #[derive(Debug, Args)]
 pub(crate) struct CatFileArgs {
-    #[arg(short, default_value = "false")]
-    pub(crate) pretty: bool,
-    #[arg(short = 't', default_value = "false")]
-    pub(crate) obj_type: bool,
-    #[arg(short, default_value = "false")]
-    pub(crate) show_size: bool,
+    /// pretty-print object's content
+    #[arg(short, default_value = "false", group = "operation")]
+    pretty: bool,
+    /// show object type
+    #[arg(short = 't', default_value = "false", group = "operation")]
+    obj_type: bool,
+    /// allow -s and -t to work with broken/corrupt objects
     #[arg(long, default_value = "false")]
-    pub(crate) allow_unknown_type: bool,
-    #[arg(short, default_value = "false")]
-    pub(crate) exists: bool,
-    pub(crate) object: String,
+    allow_unknown_type: bool,
+    /// show object size
+    #[arg(short, default_value = "false", group = "operation")]
+    show_size: bool,
+    /// exit with zero when there's no error
+    #[arg(short, default_value = "false", group = "operation")]
+    exists: bool,
+    #[arg(name = "object")]
+    object: String,
 }
 
-pub(crate) fn cat_file_command(args: CatFileArgs) -> io::Result<()> {
-    let decoded_content = &mut util::get_object(&args.object)?;
+pub(crate) fn cat_file_command(args: CatFileArgs) -> GitCommandResult {
+    let result = util::find_object_file(&args.object);
+
+    let path = match result {
+        // if -e option (test for object existence) return Ok now, don't continue
+        Ok(_) if args.exists => return Ok(()),
+        Ok(p) => p,
+        // if error already, return now, no point continuing regardless of -e option or not
+        Err(e) => return Err(GitError::from(e)),
+    };
+
+    let decoded_content = &mut util::get_object_from_path(path)?;
 
     let index = util::find_null_byte_index(decoded_content);
 
@@ -35,15 +49,13 @@ pub(crate) fn cat_file_command(args: CatFileArgs) -> io::Result<()> {
                 print!("{}", util::bytes_to_string(content));
             }
             GitObjectType::Tree => {
-                handle_cat_file_tree_object(obj_len, content)?;
+                handle_cat_file_tree_object(content)?;
             }
         }
     } else if args.obj_type {
         println!("{obj_type}");
     } else if args.show_size {
         println!("{obj_len}");
-    } else {
-        unimplemented!("only stdin is currently supported")
     }
 
     Ok(())
@@ -57,22 +69,26 @@ pub(crate) fn cat_file_command(args: CatFileArgs) -> io::Result<()> {
 /// ```
 /// [filemode][SP][filename]\0[hash-bytes][filemode][SP][filename]\0[hash-bytes]
 /// ```
-fn handle_cat_file_tree_object(obj_len: String, content: &[u8]) -> io::Result<()> {
+fn handle_cat_file_tree_object(content: &[u8]) -> GitResult<()> {
     let mut consumed = 0usize;
-    let len = obj_len.as_str().parse::<usize>().expect("invalid length");
+    let len = content.len();
     while consumed < len {
         let index = util::find_null_byte_index(&content[consumed..]);
         let end = consumed + index;
         assert!(end < content.len());
-        let tree_row_prefix = &mut content[consumed..end].split(|x| *x == b' ');
-        let mode = util::bytes_to_string(tree_row_prefix.next().unwrap());
-        let file = util::bytes_to_string(tree_row_prefix.next().unwrap());
-        consumed += index + 1; // +1 for SP (0x20) char
+
+        let mode_and_file = &mut content[consumed..end].split(|x| *x == b' ');
+        let mode = util::bytes_to_string(mode_and_file.next().unwrap());
+        let file = util::bytes_to_string(mode_and_file.next().unwrap());
+        consumed += index + 1; // +1 for null byte
+
         let hash = hex::encode(&content[consumed..consumed + 20]);
         consumed += 20; // sizeof SHA-1 hash
+
         let obj_contents = &mut util::get_object(hash.as_str())?;
         let index = util::find_null_byte_index(obj_contents);
         let (obj_type, _) = util::get_object_header(obj_contents, index);
+
         println!("{:0>6} {} {}    {}", mode, obj_type, hash, file);
     }
 
