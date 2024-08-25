@@ -22,7 +22,6 @@ pub(crate) struct HashObjectArgs {
     pub(crate) stdin: bool,
     #[arg(long, default_value = "false")]
     pub(crate) literally: bool,
-    #[arg(last = true)]
     pub(crate) files: Option<Vec<OsString>>,
 }
 
@@ -34,7 +33,14 @@ pub(crate) fn hash_object_command(args: HashObjectArgs) -> GitCommandResult {
     if args.stdin {
         let stdin = stdin();
         hash_object(&args, stdin)?;
-    } else if let Some(paths) = &args.files {
+    } else if let Some(mut paths) = &args.files {
+        if paths.len() > 1 {
+            // Git hash-object works with or without specifying '--' before file list
+            if paths.first() == Some(&OsString::from("--")) {
+                paths.remove(0);
+            }
+        }
+
         let files = paths
             .iter()
             .map(PathBuf::from)
