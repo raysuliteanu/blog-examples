@@ -1,4 +1,4 @@
-use crate::commands::{GitCommandResult, GitError, GitResult};
+use crate::commands::{GitCommandResult, GitResult};
 use crate::util;
 use crate::util::GitObjectType;
 use clap::Args;
@@ -32,7 +32,7 @@ pub(crate) fn cat_file_command(args: CatFileArgs) -> GitCommandResult {
         Ok(_) if args.exists => return Ok(()),
         Ok(p) => p,
         // if error already, return now, no point continuing regardless of -e option or not
-        Err(e) => return Err(GitError::from(e)),
+        Err(e) => return Err(e),
     };
 
     let decoded_content = &mut util::get_object_from_path(path)?;
