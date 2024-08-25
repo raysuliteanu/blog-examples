@@ -16,7 +16,7 @@ use sha1::{Digest, Sha1};
 pub(crate) struct HashObjectArgs {
     #[arg(short = 't', default_value = "blob")]
     pub(crate) obj_type: String,
-    #[arg(short = 'w', default_value = "false")]
+    #[arg(short, default_value = "false")]
     pub(crate) write_to_db: bool,
     #[arg(long, default_value = "false")]
     pub(crate) stdin: bool,
@@ -33,13 +33,13 @@ pub(crate) fn hash_object_command(args: HashObjectArgs) -> GitCommandResult {
     if args.stdin {
         let stdin = stdin();
         hash_object(&args, stdin)?;
-    } else if let Some(mut paths) = &args.files {
-        if paths.len() > 1 {
+    } else if let Some(paths) = &args.files {
+        let paths = if paths.len() > 1 && paths.first() == Some(&OsString::from("--")) {
             // Git hash-object works with or without specifying '--' before file list
-            if paths.first() == Some(&OsString::from("--")) {
-                paths.remove(0);
-            }
-        }
+            &paths[1..]
+        } else {
+            &paths[..]
+        };
 
         let files = paths
             .iter()
