@@ -1,4 +1,4 @@
-use crate::commands::{GitCommandResult, GitError, GitResult};
+use crate::commands::{GitCommandResult, GitResult};
 use crate::util;
 use clap::Args;
 use flate2::write::ZlibEncoder;
@@ -41,26 +41,26 @@ pub(crate) fn hash_object_command(args: HashObjectArgs) -> GitCommandResult {
             &paths[..]
         };
 
-        let files = paths
+        paths
             .iter()
             .map(PathBuf::from)
             .map(File::open)
-            .collect::<Vec<io::Result<File>>>();
-
-        for file in files {
-            debug!("hash_object_command() processing: {:?}", file);
-            match file {
-                Ok(mut f) => {
-                    hash_object(&args, &mut f)?;
-                }
-                Err(e) => return Err(GitError::Io { source: e }),
-            }
-        }
+            .filter_map(Result::ok)
+            .try_for_each(|mut f| hash_object(&args, &mut f))?;
     } else {
         unimplemented!("args not supported: {:?}", args);
     };
 
     Ok(())
+}
+
+fn hash_object_stdin(args: &HashObjectArgs) -> GitCommandResult {
+    let mut temp_file = make_temp_file()?;
+    let mut stdin = stdin();
+
+    std::io::copy(&mut stdin, &mut temp_file)?;
+
+    hash_object(args, &mut temp_file.reopen()?)
 }
 
 fn hash_object(args: &HashObjectArgs, input: &mut File) -> GitCommandResult {
@@ -86,6 +86,12 @@ fn hash_object(args: &HashObjectArgs, input: &mut File) -> GitCommandResult {
     Ok(())
 }
 
+fn make_temp_file() -> GitResult<NamedTempFile> {
+    let temp_file = Builder::new().prefix("rg").suffix(".tmp").tempfile()?;
+    debug!("temp file: {:?}", temp_file.path());
+    Ok(temp_file)
+}
+
 fn encode_content<W: Write>(input: &mut File, writer: W) -> GitResult<()> {
     let mut encoding_writer = EncodingWriter::new(writer);
 
@@ -99,21 +105,6 @@ fn encode_content<W: Write>(input: &mut File, writer: W) -> GitResult<()> {
     encoding_writer.finalize()?;
 
     Ok(())
-}
-
-fn hash_object_stdin(args: &HashObjectArgs) -> GitCommandResult {
-    let mut temp_file = make_temp_file()?;
-    let mut stdin = stdin();
-
-    std::io::copy(&mut stdin, &mut temp_file)?;
-
-    hash_object(args, &mut temp_file.reopen()?)
-}
-
-fn make_temp_file() -> GitResult<NamedTempFile> {
-    let temp_file = Builder::new().prefix("rg").suffix(".tmp").tempfile()?;
-    debug!("temp file: {:?}", temp_file.path());
-    Ok(temp_file)
 }
 
 struct HashObjectWriter<W: Write> {
