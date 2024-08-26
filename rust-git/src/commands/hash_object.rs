@@ -1,16 +1,17 @@
-use std::ffi::OsString;
-use std::fs::File;
-use std::io::{stdin, Read, Write};
-use std::path::PathBuf;
-use std::{fs, io};
-
-use crate::commands::{GitCommandResult, GitError};
+use crate::commands::{GitCommandResult, GitError, GitResult};
 use crate::util;
 use clap::Args;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 use log::debug;
+use sha1::digest::FixedOutputReset;
 use sha1::{Digest, Sha1};
+use std::ffi::OsString;
+use std::fs::File;
+use std::io::{stdin, Write};
+use std::path::PathBuf;
+use std::{fs, io};
+use tempfile::{Builder, NamedTempFile};
 
 #[derive(Debug, Args)]
 pub(crate) struct HashObjectArgs {
@@ -31,8 +32,7 @@ pub(crate) fn hash_object_command(args: HashObjectArgs) -> GitCommandResult {
     }
 
     if args.stdin {
-        let stdin = stdin();
-        hash_object(&args, stdin)?;
+        hash_object_stdin(&args)?;
     } else if let Some(paths) = &args.files {
         let paths = if paths.len() > 1 && paths.first() == Some(&OsString::from("--")) {
             // Git hash-object works with or without specifying '--' before file list
@@ -50,71 +50,97 @@ pub(crate) fn hash_object_command(args: HashObjectArgs) -> GitCommandResult {
         for file in files {
             debug!("hash_object_command() processing: {:?}", file);
             match file {
-                Ok(f) => {
-                    hash_object(&args, f)?;
+                Ok(mut f) => {
+                    hash_object(&args, &mut f)?;
                 }
                 Err(e) => return Err(GitError::Io { source: e }),
             }
         }
     } else {
-        debug!("{:?}", args);
         unimplemented!("args not supported: {:?}", args);
     };
 
     Ok(())
 }
 
-fn read_content_to_hash(mut file: impl Read) -> io::Result<(Vec<u8>, usize)> {
-    let mut input = Vec::new();
-    let read = file.read_to_end(&mut input)?;
-    Ok((input, read))
-}
+fn hash_object(args: &HashObjectArgs, input: &mut File) -> GitCommandResult {
+    let temp_file = &make_temp_file()?;
+    let mut hash_writer = HashObjectWriter::new(temp_file);
 
-fn hash_object(args: &HashObjectArgs, file: impl Read) -> io::Result<()> {
-    let (mut input, read) = read_content_to_hash(file)?;
-    let obj_header = format!("{} {read}\0", args.obj_type);
-    let obj_header = obj_header.as_bytes();
-    let mut buf = Vec::with_capacity(obj_header.len() + input.len());
-    buf.append(&mut obj_header.to_vec());
-    buf.append(&mut input);
+    let len = input.metadata()?.len();
 
-    let hash = generate_hash(&buf);
-    let encoded = encode_obj_content(&buf)?;
+    let header = format!("blob {}\0", len);
+    debug!("header: '{}'", header);
+    write!(hash_writer, "{}", &header)?;
+
+    std::io::copy(input, &mut hash_writer)?;
+
+    let hash = hash_writer.hash();
 
     if args.write_to_db {
-        write_object(&encoded, &hash)?;
+        let obj_dir = format!("{}/{}", util::get_git_object_dir().display(), &hash[..2]);
+        fs::create_dir_all(&obj_dir)?;
+        let from = temp_file.path().display().to_string();
+        let to = format!("{}/{}", &obj_dir, &hash[2..]);
+        debug!("moving {} to {}", from, to);
+        fs::rename(from, to)?;
     }
 
-    println!("{}", hash);
+    println!("{hash}");
 
     Ok(())
 }
 
-fn generate_hash(content: &[u8]) -> String {
-    let mut hasher = Sha1::new();
-    hasher.update(content);
-    let sha1_hash = hasher.finalize();
-    hex::encode(sha1_hash)
+fn hash_object_stdin(args: &HashObjectArgs) -> GitCommandResult {
+    let mut temp_file = make_temp_file()?;
+    let mut stdin = stdin();
+
+    std::io::copy(&mut stdin, &mut temp_file)?;
+
+    hash_object(args, &mut temp_file.reopen()?)
 }
 
-fn encode_obj_content(content: &[u8]) -> io::Result<Vec<u8>> {
-    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(content)?;
-    let result = encoder.finish()?;
-    Ok(result)
+fn make_temp_file() -> GitResult<NamedTempFile> {
+    let temp_file = Builder::new()
+        .prefix("rg")
+        .suffix(".tmp")
+        // .keep(true)
+        .tempfile()?;
+    debug!("temp file: {:?}", temp_file.path());
+    Ok(temp_file)
 }
 
-fn write_object(encoded: &[u8], hash: &str) -> io::Result<()> {
-    let (dir, name) = hash.split_at(2);
-    let git_object_dir = util::get_git_object_dir();
-    let full_dir = git_object_dir.join(dir);
-    let file_path = full_dir.join(name);
-    fs::create_dir_all(full_dir)?;
+struct HashObjectWriter<W: Write> {
+    hasher: Sha1,
+    encoder: ZlibEncoder<W>,
+}
 
-    debug!("writing to {}", file_path.display());
+impl<W: Write> HashObjectWriter<W> {
+    fn new(writer: W) -> Self {
+        let encoder = ZlibEncoder::new(writer, Compression::default());
 
-    let mut file = File::create(file_path)?;
-    file.write_all(encoded)?;
+        HashObjectWriter {
+            hasher: Sha1::new(),
+            encoder,
+        }
+    }
 
-    Ok(())
+    fn hash(&mut self) -> String {
+        self.encoder.try_finish().expect("TODO: panic message");
+        let sha1 = self.hasher.finalize_fixed_reset();
+        hex::encode(sha1)
+    }
+}
+
+impl<W: Write> Write for HashObjectWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.hasher.update(buf);
+        let n = self.encoder.write(buf)?;
+        debug!("written {n}");
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
