@@ -65,15 +65,10 @@ pub(crate) fn hash_object_command(args: HashObjectArgs) -> GitCommandResult {
 
 fn hash_object(args: &HashObjectArgs, input: &mut File) -> GitCommandResult {
     let temp_file = &make_temp_file()?;
+
     let mut hash_writer = HashObjectWriter::new(temp_file);
 
-    let len = input.metadata()?.len();
-
-    let header = format!("blob {}\0", len);
-    debug!("header: '{}'", header);
-    write!(hash_writer, "{}", &header)?;
-
-    std::io::copy(input, &mut hash_writer)?;
+    encode_content(input, &mut hash_writer)?;
 
     let hash = hash_writer.hash();
 
@@ -91,6 +86,21 @@ fn hash_object(args: &HashObjectArgs, input: &mut File) -> GitCommandResult {
     Ok(())
 }
 
+fn encode_content<W: Write>(input: &mut File, writer: W) -> GitResult<()> {
+    let mut encoding_writer = EncodingWriter::new(writer);
+
+    let len = input.metadata()?.len();
+    let header = format!("blob {}\0", len);
+    debug!("header: '{}'", header);
+    write!(encoding_writer, "{}", &header)?;
+
+    std::io::copy(input, &mut encoding_writer)?;
+
+    encoding_writer.finalize()?;
+
+    Ok(())
+}
+
 fn hash_object_stdin(args: &HashObjectArgs) -> GitCommandResult {
     let mut temp_file = make_temp_file()?;
     let mut stdin = stdin();
@@ -101,32 +111,25 @@ fn hash_object_stdin(args: &HashObjectArgs) -> GitCommandResult {
 }
 
 fn make_temp_file() -> GitResult<NamedTempFile> {
-    let temp_file = Builder::new()
-        .prefix("rg")
-        .suffix(".tmp")
-        // .keep(true)
-        .tempfile()?;
+    let temp_file = Builder::new().prefix("rg").suffix(".tmp").tempfile()?;
     debug!("temp file: {:?}", temp_file.path());
     Ok(temp_file)
 }
 
 struct HashObjectWriter<W: Write> {
     hasher: Sha1,
-    encoder: ZlibEncoder<W>,
+    writer: W,
 }
 
 impl<W: Write> HashObjectWriter<W> {
     fn new(writer: W) -> Self {
-        let encoder = ZlibEncoder::new(writer, Compression::default());
-
         HashObjectWriter {
             hasher: Sha1::new(),
-            encoder,
+            writer,
         }
     }
 
     fn hash(&mut self) -> String {
-        self.encoder.try_finish().expect("TODO: panic message");
         let sha1 = self.hasher.finalize_fixed_reset();
         hex::encode(sha1)
     }
@@ -135,12 +138,37 @@ impl<W: Write> HashObjectWriter<W> {
 impl<W: Write> Write for HashObjectWriter<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.hasher.update(buf);
-        let n = self.encoder.write(buf)?;
-        debug!("written {n}");
+        let n = self.writer.write(buf)?;
         Ok(n)
     }
 
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
+    }
+}
+
+struct EncodingWriter<W: Write> {
+    encoder: ZlibEncoder<W>,
+}
+
+impl<W: Write> EncodingWriter<W> {
+    fn new(writer: W) -> Self {
+        EncodingWriter {
+            encoder: ZlibEncoder::new(writer, Compression::default()),
+        }
+    }
+
+    fn finalize(&mut self) -> io::Result<()> {
+        self.encoder.try_finish()
+    }
+}
+
+impl<W: Write> Write for EncodingWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.encoder.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.encoder.flush()
     }
 }
