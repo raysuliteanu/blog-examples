@@ -51,6 +51,7 @@ pub(crate) fn cat_file_command(args: CatFileArgs) -> GitCommandResult {
             GitObjectType::Tree => {
                 handle_cat_file_tree_object(content)?;
             }
+            _ => {}
         }
     } else if args.obj_type {
         println!("{obj_type}");

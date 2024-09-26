@@ -33,6 +33,7 @@ pub(crate) enum GitObjectType {
     Blob,
     Tree,
     Commit,
+    Tag,
 }
 
 impl From<String> for GitObjectType {
@@ -47,6 +48,7 @@ impl From<&str> for GitObjectType {
             "blob" => GitObjectType::Blob,
             "tree" => GitObjectType::Tree,
             "commit" => GitObjectType::Commit,
+            "tag" => GitObjectType::Tag,
             _ => panic!(),
         }
     }
@@ -89,6 +91,36 @@ pub(crate) fn find_git_parent_dir() -> PathBuf {
 
 pub(crate) fn get_git_object_dir() -> PathBuf {
     GIT_PARENT_DIR.join(GIT_DIR_NAME).join(GIT_OBJ_DIR_NAME)
+}
+
+pub(crate) fn get_git_tags_dir() -> PathBuf {
+    GIT_PARENT_DIR
+        .join(GIT_DIR_NAME)
+        .join(GIT_REFS_TAGS_DIR_NAME)
+}
+
+pub(crate) struct Tag {
+    pub name: String,
+    pub path: PathBuf,
+    pub obj_id: String,
+}
+
+pub(crate) fn get_tag(name: &str) -> Option<Tag> {
+    let path = get_git_tags_dir().join(name);
+    match File::open(&path) {
+        Ok(mut file) => {
+            let mut obj_id = String::new();
+            match file.read_to_string(&mut obj_id) {
+                Ok(_) => Some(Tag {
+                    name: name.to_string(),
+                    path,
+                    obj_id,
+                }),
+                Err(_) => None,
+            }
+        }
+        Err(_) => None,
+    }
 }
 
 pub(crate) fn get_object_header(decoded_content: &mut [u8], index: usize) -> (String, String) {

@@ -3,6 +3,7 @@ use crate::commands::config::ConfigArgs;
 use crate::commands::hash_object::HashObjectArgs;
 use crate::commands::init::InitArgs;
 use clap::{Parser, Subcommand};
+use ls_tree::LsTreeArgs;
 use std::io;
 use thiserror::Error;
 
@@ -10,6 +11,7 @@ pub(crate) mod cat_file;
 pub(crate) mod config;
 pub(crate) mod hash_object;
 pub(crate) mod init;
+pub(crate) mod ls_tree;
 
 #[derive(Debug, Parser)]
 pub(crate) struct Git {
@@ -19,10 +21,16 @@ pub(crate) struct Git {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum Commands {
+    /// Create an empty Git repository or reinitialize an existing one
     Init(InitArgs),
+    /// Provide contents or details of repository objects
     CatFile(CatFileArgs),
+    /// Compute object ID and optionally create an object from a file
     HashObject(HashObjectArgs),
+    /// Get and set repository or global options
     Config(ConfigArgs),
+    /// List the contents of a tree object
+    LsTree(LsTreeArgs),
 }
 
 pub type GitResult<T> = Result<T, GitError>;
