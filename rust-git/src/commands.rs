@@ -38,6 +38,8 @@ pub type GitCommandResult = GitResult<()>;
 
 #[derive(Error, Debug)]
 pub(crate) enum GitError {
+    #[error("read object failed")]
+    ReadObjectError,
     #[error("Not a valid object name {obj_id}")]
     InvalidObjectId { obj_id: String },
     #[error("I/O error")]

@@ -8,6 +8,7 @@ use clap::Parser;
 use std::process::ExitCode;
 
 mod commands;
+mod object;
 mod util;
 
 fn main() -> ExitCode {
@@ -27,6 +28,6 @@ fn main() -> ExitCode {
         ExitCode::from(0)
     } else {
         eprintln!("{}", result.err().unwrap());
-        ExitCode::from(1)
+        ExitCode::from(128)
     }
 }

@@ -1,6 +1,7 @@
-use crate::commands::{GitCommandResult, GitResult};
+use crate::commands::ls_tree::LsTreeArgs;
+use crate::commands::{ls_tree, GitCommandResult, GitResult};
+use crate::object::{GitObject, GitObjectType};
 use crate::util;
-use crate::util::GitObjectType;
 use clap::Args;
 
 #[derive(Debug, Args)]
@@ -25,38 +26,26 @@ pub(crate) struct CatFileArgs {
 }
 
 pub(crate) fn cat_file_command(args: CatFileArgs) -> GitCommandResult {
-    let result = util::find_object_file(&args.object);
+    let obj = GitObject::read(&args.object)?;
 
-    let path = match result {
-        // if -e option (test for object existence) return Ok now, don't continue
-        Ok(_) if args.exists => return Ok(()),
-        Ok(p) => p,
-        // if error already, return now, no point continuing regardless of -e option or not
-        Err(e) => return Err(e),
-    };
-
-    let decoded_content = &mut util::get_object_from_path(path)?;
-
-    let index = util::find_null_byte_index(decoded_content);
-
-    let (obj_type, obj_len) = util::get_object_header(decoded_content, index);
-
-    let content = &decoded_content[index + 1..];
+    if args.exists {
+        return Ok(());
+    }
 
     if args.pretty {
-        match GitObjectType::from(obj_type) {
+        match obj.kind {
             GitObjectType::Blob | GitObjectType::Commit => {
-                print!("{}", util::bytes_to_string(content));
+                print!("{}", util::bytes_to_string(obj.body.unwrap().as_slice()));
             }
             GitObjectType::Tree => {
-                handle_cat_file_tree_object(content)?;
+                handle_cat_file_tree_object(obj)?;
             }
             _ => {}
         }
     } else if args.obj_type {
-        println!("{obj_type}");
+        println!("{}", obj.kind);
     } else if args.show_size {
-        println!("{obj_len}");
+        println!("{}", obj.size);
     }
 
     Ok(())
@@ -70,28 +59,7 @@ pub(crate) fn cat_file_command(args: CatFileArgs) -> GitCommandResult {
 /// ```
 /// [filemode][SP][filename]\0[hash-bytes][filemode][SP][filename]\0[hash-bytes]
 /// ```
-fn handle_cat_file_tree_object(content: &[u8]) -> GitResult<()> {
-    let mut consumed = 0usize;
-    let len = content.len();
-    while consumed < len {
-        let index = util::find_null_byte_index(&content[consumed..]);
-        let end = consumed + index;
-        assert!(end < content.len());
-
-        let mode_and_file = &mut content[consumed..end].split(|x| *x == b' ');
-        let mode = util::bytes_to_string(mode_and_file.next().unwrap());
-        let file = util::bytes_to_string(mode_and_file.next().unwrap());
-        consumed += index + 1; // +1 for null byte
-
-        let hash = hex::encode(&content[consumed..consumed + 20]);
-        consumed += 20; // sizeof SHA-1 hash
-
-        let obj_contents = &mut util::get_object(hash.as_str())?;
-        let index = util::find_null_byte_index(obj_contents);
-        let (obj_type, _) = util::get_object_header(obj_contents, index);
-
-        println!("{:0>6} {} {}    {}", mode, obj_type, hash, file);
-    }
-
-    Ok(())
+fn handle_cat_file_tree_object(obj: GitObject) -> GitResult<()> {
+    let args = LsTreeArgs::default();
+    ls_tree::print_tree_object(&args, obj)
 }

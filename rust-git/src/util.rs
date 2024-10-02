@@ -1,10 +1,9 @@
 use crate::commands::{GitError, GitResult};
-use flate2::bufread::ZlibDecoder;
 use lazy_static::lazy_static;
 use log::debug;
 use std::ffi::OsString;
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::Read;
 use std::path::PathBuf;
 use std::{env, path};
 
@@ -28,30 +27,10 @@ lazy_static! {
     pub(crate) static ref GIT_REPO_CONFIG_FILE: PathBuf = PathBuf::from("config");
 }
 
-#[derive(Debug)]
-pub(crate) enum GitObjectType {
-    Blob,
-    Tree,
-    Commit,
-    Tag,
-}
-
-impl From<String> for GitObjectType {
-    fn from(value: String) -> Self {
-        GitObjectType::from(value.as_str())
-    }
-}
-
-impl From<&str> for GitObjectType {
-    fn from(value: &str) -> Self {
-        match value {
-            "blob" => GitObjectType::Blob,
-            "tree" => GitObjectType::Tree,
-            "commit" => GitObjectType::Commit,
-            "tag" => GitObjectType::Tag,
-            _ => panic!(),
-        }
-    }
+pub(crate) fn u8_slice_to_usize(slice: &[u8]) -> Option<usize> {
+    std::str::from_utf8(slice)
+        .ok()
+        .map(|s| s.parse::<usize>().unwrap())
 }
 
 pub(crate) fn get_git_dirs(
@@ -107,13 +86,13 @@ pub(crate) struct Tag {
 
 pub(crate) fn get_tag(name: &str) -> Option<Tag> {
     let path = get_git_tags_dir().join(name);
-    match File::open(&path) {
+    match File::open(path) {
         Ok(mut file) => {
             let mut obj_id = String::new();
             match file.read_to_string(&mut obj_id) {
                 Ok(_) => Some(Tag {
                     name: name.to_string(),
-                    path,
+                    path: get_git_tags_dir().join(name),
                     obj_id,
                 }),
                 Err(_) => None,
@@ -121,24 +100,6 @@ pub(crate) fn get_tag(name: &str) -> Option<Tag> {
         }
         Err(_) => None,
     }
-}
-
-pub(crate) fn get_object_header(decoded_content: &mut [u8], index: usize) -> (String, String) {
-    let header = &mut decoded_content[0..index].split(|x| *x == b' ');
-    let obj_type = bytes_to_string(header.next().unwrap());
-    let obj_len = bytes_to_string(header.next().unwrap());
-    (obj_type, obj_len)
-}
-
-pub(crate) fn find_null_byte_index(content: &[u8]) -> usize {
-    debug!("{:?}", content);
-    for (i, v) in content.iter().enumerate() {
-        if *v == 0 {
-            return i;
-        }
-    }
-
-    content.len()
 }
 
 pub(crate) fn bytes_to_string(content: &[u8]) -> String {
@@ -149,32 +110,6 @@ pub(crate) fn bytes_to_string(content: &[u8]) -> String {
             acc.push(c);
             acc
         })
-}
-
-pub(crate) fn get_object(object: &str) -> GitResult<Vec<u8>> {
-    let object_file = find_object_file(object);
-    match object_file {
-        Ok(path) => Ok(get_object_from_path(path)?),
-        Err(e) => Err(e),
-    }
-}
-
-pub(crate) fn get_object_from_path(path: PathBuf) -> GitResult<Vec<u8>> {
-    match File::open(path) {
-        Ok(file) => Ok(decode_obj_content(file)?),
-        Err(e) => Err(GitError::Io { source: e }),
-    }
-}
-
-fn decode_obj_content(file: File) -> GitResult<Vec<u8>> {
-    let content: &mut Vec<u8> = &mut Vec::new();
-    let mut reader = BufReader::new(file);
-    let _ = reader.read_to_end(content)?;
-    let mut decoder = ZlibDecoder::new(&content[..]);
-    let mut decoded_content: Vec<u8> = Vec::new();
-    decoder.read_to_end(&mut decoded_content)?;
-
-    Ok(decoded_content)
 }
 
 pub(crate) fn find_object_file(obj_id: &str) -> GitResult<PathBuf> {

@@ -1,9 +1,17 @@
 use clap::Args;
+use std::io::Read;
 
-use crate::{commands::GitCommandResult, util};
+use crate::commands::GitCommandResult;
+use crate::commands::{GitError, GitResult};
+use crate::object::{GitObject, GitObjectType};
+use crate::util;
 
-#[derive(Debug, Args)]
+#[derive(Debug, Args, Default)]
 pub(crate) struct LsTreeArgs {
+    /// Show only the named tree entry itself, not its children.
+    #[arg(long, default_value = "false")]
+    name_only: bool,
+
     /// Show only the named tree entry itself, not its children.
     #[arg(short, default_value = "false")]
     dir_only: bool,
@@ -37,12 +45,55 @@ pub(crate) fn ls_tree_command(args: LsTreeArgs) -> GitCommandResult {
     // a tree object, a tag object that points to a tree object, a tag object that points to a tag object that points to a
     // tree object, etc.
 
-    // 1. see if args.tree_ish is a tag by looking in refs/tags
-    let tag = util::get_tag(args.tree_ish.as_str());
-    let _tish = match tag {
-        None => args.tree_ish,
-        Some(t) => t.obj_id,
-    };
+    let arg_id = args.tree_ish.as_str();
+    let obj = GitObject::read(arg_id)?;
+    match obj.kind {
+        GitObjectType::Tree => {
+            // format and print tree obj body
+            print_tree_object(&args, obj)
+        }
+        GitObjectType::Commit => {
+            // get tree object of commit and print that
+            todo!("handle commit obj")
+        }
+        GitObjectType::Tag => {
+            // iterate until tag points to a tree object (or not)
+            todo!("handle tag obj")
+        }
+        GitObjectType::Blob => {
+            eprintln!("cannot ls-tree a blob");
+            Err(GitError::InvalidObjectId {
+                obj_id: args.tree_ish,
+            })
+        }
+    }
+}
+
+pub fn print_tree_object(_args: &LsTreeArgs, obj: GitObject) -> GitResult<()> {
+    // each entry is 'mode name\0[hash:20]
+    let mut body = obj.body.unwrap();
+
+    loop {
+        if body.is_empty() {
+            break;
+        }
+
+        let mut split = body.splitn(2, |b| *b == 0);
+        let mode_and_file = split.next().unwrap();
+        let mut rest = split.next().unwrap();
+        let mut split = mode_and_file.split(|b| *b == b' ');
+        let mode = util::bytes_to_string(split.next().unwrap());
+        let file = util::bytes_to_string(split.next().unwrap());
+
+        let mut hash_buf = [0u8; 20];
+        rest.read_exact(&mut hash_buf)?;
+        body = rest.to_vec();
+
+        let hash = hex::encode(hash_buf);
+        let entry_obj = GitObject::read(hash.as_str())?;
+
+        println!("{:0>6} {} {}    {}", mode, entry_obj.kind, hash, file);
+    }
 
     Ok(())
 }
