@@ -60,7 +60,7 @@ pub(crate) fn ls_tree(obj_id: &String, args: &LsTreeArgs) -> GitCommandResult {
                     obj_id: args.tree_ish.to_string(),
                 })
             }
-            _ => todo!("can we get here e.g. for a tag? I think that goes to the Err arm"),
+            _ => unreachable!("due to other branches"),
         },
         Err(_) => {
             debug!("cannot read object file for id '{obj_id}'; trying as a tag ...");

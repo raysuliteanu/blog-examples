@@ -58,7 +58,6 @@ pub(crate) enum GitObjectType {
     Blob,
     Tree,
     Commit,
-    Tag,
 }
 
 impl Display for GitObjectType {
@@ -67,7 +66,6 @@ impl Display for GitObjectType {
             GitObjectType::Blob => write!(f, "blob"),
             GitObjectType::Tree => write!(f, "tree"),
             GitObjectType::Commit => write!(f, "commit"),
-            GitObjectType::Tag => write!(f, "tag"),
         }
     }
 }
@@ -84,7 +82,6 @@ impl From<&str> for GitObjectType {
             "blob" => GitObjectType::Blob,
             "tree" => GitObjectType::Tree,
             "commit" => GitObjectType::Commit,
-            "tag" => GitObjectType::Tag,
             _ => panic!(),
         }
     }
