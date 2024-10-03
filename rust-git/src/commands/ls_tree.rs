@@ -64,7 +64,7 @@ pub(crate) fn ls_tree(obj_id: &String, args: &LsTreeArgs) -> GitCommandResult {
                     obj_id: args.tree_ish.to_string(),
                 })
             }
-            _ => todo!(),
+            _ => todo!("can we get here e.g. for a tag? I think that goes to the Err arm"),
         },
         Err(_) => {
             // could be that the arg_id is not an object (blob/commit/tree)
