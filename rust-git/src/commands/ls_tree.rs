@@ -1,8 +1,9 @@
 use crate::commands::GitCommandResult;
 use crate::commands::{GitError, GitResult};
 use crate::object::{GitObject, GitObjectType};
-use crate::{tag, util};
+use crate::{commit, tag, util};
 use clap::{arg, Args};
+use log::{debug, trace};
 use std::io::Read;
 
 #[derive(Debug, Args, Default)]
@@ -41,6 +42,7 @@ pub(crate) fn ls_tree_command(args: LsTreeArgs) -> GitCommandResult {
 }
 
 pub(crate) fn ls_tree(obj_id: &String, args: &LsTreeArgs) -> GitCommandResult {
+    trace!("ls_tree({obj_id})");
     match GitObject::read(obj_id) {
         Ok(obj) => match obj.kind {
             GitObjectType::Tree => {
@@ -49,10 +51,11 @@ pub(crate) fn ls_tree(obj_id: &String, args: &LsTreeArgs) -> GitCommandResult {
             }
             GitObjectType::Commit => {
                 // get tree object of commit and print that
-                todo!("handle commit obj")
+                let commit = commit::Commit::from(obj);
+                ls_tree(&commit.tree, args)
             }
             GitObjectType::Blob => {
-                eprintln!("cannot ls-tree a blob");
+                debug!("cannot ls-tree a blob");
                 Err(GitError::InvalidObjectId {
                     obj_id: args.tree_ish.to_string(),
                 })
@@ -60,11 +63,13 @@ pub(crate) fn ls_tree(obj_id: &String, args: &LsTreeArgs) -> GitCommandResult {
             _ => todo!("can we get here e.g. for a tag? I think that goes to the Err arm"),
         },
         Err(_) => {
+            debug!("cannot read object file for id '{obj_id}'; trying as a tag ...");
             // could be that the arg_id is not an object (blob/commit/tree)
             // check for tag
             match tag::Tag::get_tag(obj_id) {
                 Some(tag) => ls_tree(&tag.obj_id, args),
                 None => {
+                    debug!("not a tag {obj_id}");
                     // not a tree or a commit or a tag, no good
                     Err(GitError::InvalidObjectId {
                         obj_id: obj_id.to_string(),

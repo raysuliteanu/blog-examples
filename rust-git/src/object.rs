@@ -1,6 +1,7 @@
 use crate::commands::{GitError, GitResult};
 use crate::util::{bytes_to_string, find_object_file, u8_slice_to_usize};
 use flate2::bufread::ZlibDecoder;
+use log::trace;
 use std::fmt::{Display, Formatter};
 use std::io::{BufRead, BufReader, Read};
 
@@ -13,6 +14,7 @@ pub(crate) struct GitObject<'a> {
 
 impl GitObject<'_> {
     pub(crate) fn read(obj_id: &str) -> GitResult<GitObject> {
+        trace!("read({obj_id})");
         let path = find_object_file(obj_id)?;
         let file = std::fs::File::open(path)?;
         let reader = BufReader::new(file);
