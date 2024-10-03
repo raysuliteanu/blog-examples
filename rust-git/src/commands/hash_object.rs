@@ -63,12 +63,16 @@ fn hash_object_stdin(args: &HashObjectArgs) -> GitCommandResult {
 }
 
 fn hash_object(args: &HashObjectArgs, input: &mut File) -> GitCommandResult {
-    let (path, hash) = encode_content(input)?;
+    let output = make_temp_file()?;
+    let hash = encode_content(input, &output)?;
 
     if args.write_to_db {
         let obj_dir = format!("{}/{}", util::get_git_object_dir().display(), &hash[..2]);
         fs::create_dir_all(&obj_dir)?;
+        assert!(PathBuf::from(&obj_dir).exists());
         let to = format!("{}/{}", &obj_dir, &hash[2..]);
+        let path = &output.path();
+        assert!(path.exists());
         debug!("moving {} to {}", path.display(), to);
         fs::rename(path, to)?;
     }
@@ -84,9 +88,8 @@ fn make_temp_file() -> GitResult<NamedTempFile> {
     Ok(temp_file)
 }
 
-fn encode_content(input: &mut File) -> GitResult<(PathBuf, String)> {
-    let file = make_temp_file()?;
-    let writer = BufWriter::new(&file);
+fn encode_content(input: &mut File, output: &NamedTempFile) -> GitResult<String> {
+    let writer = BufWriter::new(output);
     let mut hasher = HashObjectWriter::new(writer);
 
     let len = input.metadata()?.len();
@@ -96,8 +99,7 @@ fn encode_content(input: &mut File) -> GitResult<(PathBuf, String)> {
 
     std::io::copy(input, &mut hasher)?;
 
-
-    Ok((file.path().to_path_buf(), hash(hasher)))
+    Ok(hash(hasher))
 }
 
 struct HashObjectWriter<W: Write> {

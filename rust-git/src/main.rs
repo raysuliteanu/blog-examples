@@ -25,10 +25,13 @@ fn main() -> ExitCode {
         Commands::LsTree(args) => ls_tree::ls_tree_command(args),
     };
 
-    if result.is_ok() {
-        ExitCode::from(0)
-    } else {
-        eprintln!("{}", result.err().unwrap());
-        ExitCode::from(128)
-    }
+    let code = match result {
+        Ok(_) => 0,
+        Err(e) => {
+            eprintln!("{e}");
+            128
+        }
+    };
+
+    ExitCode::from(code)
 }
