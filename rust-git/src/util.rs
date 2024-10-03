@@ -33,6 +33,12 @@ pub(crate) fn u8_slice_to_usize(slice: &[u8]) -> Option<usize> {
         .map(|s| s.parse::<usize>().unwrap())
 }
 
+pub(crate) fn bytes_to_string(content: &[u8]) -> String {
+    std::str::from_utf8(content)
+        .expect("failed to convert bytes to string")
+        .to_string()
+}
+
 pub(crate) fn get_git_dirs(
     directory: Option<OsString>,
     separate_git_dir: Option<OsString>,
@@ -76,12 +82,6 @@ pub(crate) fn get_git_tags_dir() -> PathBuf {
     GIT_PARENT_DIR
         .join(GIT_DIR_NAME)
         .join(GIT_REFS_TAGS_DIR_NAME)
-}
-
-pub(crate) fn bytes_to_string(content: &[u8]) -> String {
-    std::str::from_utf8(content)
-        .expect("failed to convert bytes to string")
-        .to_string()
 }
 
 pub(crate) fn find_object_file(obj_id: &str) -> GitResult<PathBuf> {

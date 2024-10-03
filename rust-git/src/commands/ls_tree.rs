@@ -41,18 +41,11 @@ pub(crate) fn ls_tree_command(args: LsTreeArgs) -> GitCommandResult {
 }
 
 pub(crate) fn ls_tree(obj_id: &String, args: &LsTreeArgs) -> GitCommandResult {
-    // From the Git documentation:
-    //
-    // A tree object or an object that can be recursively dereferenced to a tree object. Dereferencing a commit object
-    // yields the tree object corresponding to the revision's top directory. The following are all tree-ishes: a commit-ish,
-    // a tree object, a tag object that points to a tree object, a tag object that points to a tag object that points to a
-    // tree object, etc.
-
     match GitObject::read(obj_id) {
         Ok(obj) => match obj.kind {
             GitObjectType::Tree => {
                 // format and print tree obj body
-                print_tree_object(&args, obj)
+                print_tree_object(&args, obj, None)
             }
             GitObjectType::Commit => {
                 // get tree object of commit and print that
@@ -82,7 +75,19 @@ pub(crate) fn ls_tree(obj_id: &String, args: &LsTreeArgs) -> GitCommandResult {
     }
 }
 
-pub fn print_tree_object(args: &LsTreeArgs, obj: GitObject) -> GitResult<()> {
+/// each line of content is of the form
+/// `[filemode][SP][filename]\0[hash-bytes]`
+/// where SP is ASCII space (0x20) and where hash-bytes is the SHA-1 hash, a
+/// fixed 20 bytes in length; so the next "line" starts immediately after that
+/// e.g.
+/// ```
+/// [filemode][SP][filename]\0[hash-bytes][filemode][SP][filename]\0[hash-bytes]
+/// ```
+pub fn print_tree_object(
+    args: &LsTreeArgs,
+    obj: GitObject,
+    path_part: Option<String>,
+) -> GitResult<()> {
     // each entry is 'mode name\0[hash:20]
     let mut body = obj.body.unwrap();
 
@@ -99,39 +104,58 @@ pub fn print_tree_object(args: &LsTreeArgs, obj: GitObject) -> GitResult<()> {
         // 2. spit the mode_and_name buffer into the mode and the name, which are separated by ' '
         let mut split = mode_and_file.split(|b| *b == b' ');
         let mode = util::bytes_to_string(split.next().unwrap());
-        let file = util::bytes_to_string(split.next().unwrap());
+        let filename = util::bytes_to_string(split.next().unwrap());
 
-        // 4. read the next 20 bytes from `rest` which is the object hash
+        // 3. read the next 20 bytes from `rest` which is the object hash
         let mut hash_buf = [0u8; 20];
         rest.read_exact(&mut hash_buf)?;
 
         // 4. point body at the remaining bytes for the loop
         body = rest.to_vec();
 
-        // 5. if name_only then only print the name :)
-        if args.name_only {
-            println!("{}", file);
-            continue;
-        }
-
         // 5. using the hash, look up the referenced object to get its type
         let hash = hex::encode(hash_buf);
         let entry_obj = GitObject::read(hash.as_str())?;
         let kind = &entry_obj.kind;
 
-        print!("{:0>6} {} {}", mode, kind, hash);
+        // 6. if name_only then only print the name :)
+        if args.name_only {
+            let path = create_file_name(&path_part, filename);
 
-        if args.show_size {
-            let len = entry_obj.size;
-            if entry_obj.kind == GitObjectType::Tree {
-                print!("{: >8}", "-");
+            if *kind == GitObjectType::Tree && args.recurse {
+                print_tree_object(args, entry_obj, Some(path))?;
             } else {
-                print!("{: >8}", len);
+                println!("{}", path);
             }
+
+            continue;
         }
 
-        println!("    {}", file);
+        let path = create_file_name(&path_part, filename);
+        if *kind == GitObjectType::Tree && args.recurse {
+            print_tree_object(args, entry_obj, Some(path))?;
+        } else {
+            print!("{:0>6} {} {}", mode, kind, hash);
+
+            if args.show_size {
+                let len = entry_obj.size;
+                if entry_obj.kind == GitObjectType::Tree {
+                    print!("{: >8}", "-");
+                } else {
+                    print!("{: >8}", len);
+                }
+            }
+
+            println!("\t{}", path);
+        }
     }
 
     Ok(())
+}
+
+fn create_file_name(path: &Option<String>, filename: String) -> String {
+    match path {
+        Some(p) => p.to_owned() + "/" + filename.as_str(),
+        None => filename,
+    }
 }

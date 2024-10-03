@@ -51,15 +51,7 @@ pub(crate) fn cat_file_command(args: CatFileArgs) -> GitCommandResult {
     Ok(())
 }
 
-/// each line of content is of the form
-/// `[filemode][SP][filename]\0[hash-bytes]`
-/// where SP is ASCII space (0x20) and where hash-bytes is the SHA-1 hash, a
-/// fixed 20 bytes in length; so the next "line" starts immediately after that
-/// e.g.
-/// ```
-/// [filemode][SP][filename]\0[hash-bytes][filemode][SP][filename]\0[hash-bytes]
-/// ```
 fn handle_cat_file_tree_object(obj: GitObject) -> GitResult<()> {
     let args = LsTreeArgs::default();
-    ls_tree::print_tree_object(&args, obj)
+    ls_tree::print_tree_object(&args, obj, None)
 }
