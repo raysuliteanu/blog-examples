@@ -78,38 +78,10 @@ pub(crate) fn get_git_tags_dir() -> PathBuf {
         .join(GIT_REFS_TAGS_DIR_NAME)
 }
 
-pub(crate) struct Tag {
-    pub name: String,
-    pub path: PathBuf,
-    pub obj_id: String,
-}
-
-pub(crate) fn get_tag(name: &str) -> Option<Tag> {
-    let path = get_git_tags_dir().join(name);
-    match File::open(path) {
-        Ok(mut file) => {
-            let mut obj_id = String::new();
-            match file.read_to_string(&mut obj_id) {
-                Ok(_) => Some(Tag {
-                    name: name.to_string(),
-                    path: get_git_tags_dir().join(name),
-                    obj_id,
-                }),
-                Err(_) => None,
-            }
-        }
-        Err(_) => None,
-    }
-}
-
 pub(crate) fn bytes_to_string(content: &[u8]) -> String {
-    content
-        .iter()
-        .map(|b| *b as char)
-        .fold(String::new(), |mut acc, c| {
-            acc.push(c);
-            acc
-        })
+    std::str::from_utf8(content)
+        .expect("failed to convert bytes to string")
+        .to_string()
 }
 
 pub(crate) fn find_object_file(obj_id: &str) -> GitResult<PathBuf> {

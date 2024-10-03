@@ -51,7 +51,7 @@ impl GitObject<'_> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(crate) enum GitObjectType {
     Blob,
     Tree,

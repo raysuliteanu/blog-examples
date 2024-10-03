@@ -1,10 +1,9 @@
-use clap::Args;
-use std::io::Read;
-
 use crate::commands::GitCommandResult;
 use crate::commands::{GitError, GitResult};
 use crate::object::{GitObject, GitObjectType};
-use crate::util;
+use crate::{tag, util};
+use clap::{arg, Args};
+use std::io::Read;
 
 #[derive(Debug, Args, Default)]
 pub(crate) struct LsTreeArgs {
@@ -38,6 +37,10 @@ pub(crate) struct LsTreeArgs {
 }
 
 pub(crate) fn ls_tree_command(args: LsTreeArgs) -> GitCommandResult {
+    ls_tree(&args.tree_ish, &args)
+}
+
+pub(crate) fn ls_tree(obj_id: &String, args: &LsTreeArgs) -> GitCommandResult {
     // From the Git documentation:
     //
     // A tree object or an object that can be recursively dereferenced to a tree object. Dereferencing a commit object
@@ -45,31 +48,41 @@ pub(crate) fn ls_tree_command(args: LsTreeArgs) -> GitCommandResult {
     // a tree object, a tag object that points to a tree object, a tag object that points to a tag object that points to a
     // tree object, etc.
 
-    let arg_id = args.tree_ish.as_str();
-    let obj = GitObject::read(arg_id)?;
-    match obj.kind {
-        GitObjectType::Tree => {
-            // format and print tree obj body
-            print_tree_object(&args, obj)
-        }
-        GitObjectType::Commit => {
-            // get tree object of commit and print that
-            todo!("handle commit obj")
-        }
-        GitObjectType::Tag => {
-            // iterate until tag points to a tree object (or not)
-            todo!("handle tag obj")
-        }
-        GitObjectType::Blob => {
-            eprintln!("cannot ls-tree a blob");
-            Err(GitError::InvalidObjectId {
-                obj_id: args.tree_ish,
-            })
+    match GitObject::read(obj_id) {
+        Ok(obj) => match obj.kind {
+            GitObjectType::Tree => {
+                // format and print tree obj body
+                print_tree_object(&args, obj)
+            }
+            GitObjectType::Commit => {
+                // get tree object of commit and print that
+                todo!("handle commit obj")
+            }
+            GitObjectType::Blob => {
+                eprintln!("cannot ls-tree a blob");
+                Err(GitError::InvalidObjectId {
+                    obj_id: args.tree_ish.to_string(),
+                })
+            }
+            _ => todo!(),
+        },
+        Err(_) => {
+            // could be that the arg_id is not an object (blob/commit/tree)
+            // check for tag
+            match tag::Tag::get_tag(obj_id) {
+                Some(tag) => ls_tree(&tag.obj_id, args),
+                None => {
+                    // not a tree or a commit or a tag, no good
+                    Err(GitError::InvalidObjectId {
+                        obj_id: obj_id.to_string(),
+                    })
+                }
+            }
         }
     }
 }
 
-pub fn print_tree_object(_args: &LsTreeArgs, obj: GitObject) -> GitResult<()> {
+pub fn print_tree_object(args: &LsTreeArgs, obj: GitObject) -> GitResult<()> {
     // each entry is 'mode name\0[hash:20]
     let mut body = obj.body.unwrap();
 
@@ -78,21 +91,46 @@ pub fn print_tree_object(_args: &LsTreeArgs, obj: GitObject) -> GitResult<()> {
             break;
         }
 
+        // 1. split into two buffers, `[mode_and_name]0[rest]` with the 0 discarded
         let mut split = body.splitn(2, |b| *b == 0);
         let mode_and_file = split.next().unwrap();
         let mut rest = split.next().unwrap();
+
+        // 2. spit the mode_and_name buffer into the mode and the name, which are separated by ' '
         let mut split = mode_and_file.split(|b| *b == b' ');
         let mode = util::bytes_to_string(split.next().unwrap());
         let file = util::bytes_to_string(split.next().unwrap());
 
+        // 4. read the next 20 bytes from `rest` which is the object hash
         let mut hash_buf = [0u8; 20];
         rest.read_exact(&mut hash_buf)?;
+
+        // 4. point body at the remaining bytes for the loop
         body = rest.to_vec();
 
+        // 5. if name_only then only print the name :)
+        if args.name_only {
+            println!("{}", file);
+            continue;
+        }
+
+        // 5. using the hash, look up the referenced object to get its type
         let hash = hex::encode(hash_buf);
         let entry_obj = GitObject::read(hash.as_str())?;
+        let kind = &entry_obj.kind;
 
-        println!("{:0>6} {} {}    {}", mode, entry_obj.kind, hash, file);
+        print!("{:0>6} {} {}", mode, kind, hash);
+
+        if args.show_size {
+            let len = entry_obj.size;
+            if entry_obj.kind == GitObjectType::Tree {
+                print!("{: >8}", "-");
+            } else {
+                print!("{: >8}", len);
+            }
+        }
+
+        println!("    {}", file);
     }
 
     Ok(())

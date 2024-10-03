@@ -9,6 +9,7 @@ use std::process::ExitCode;
 
 mod commands;
 mod object;
+mod tag;
 mod util;
 
 fn main() -> ExitCode {
