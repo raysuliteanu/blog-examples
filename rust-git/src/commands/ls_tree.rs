@@ -75,6 +75,11 @@ pub(crate) fn ls_tree(obj_id: &String, args: &LsTreeArgs) -> GitCommandResult {
     }
 }
 
+// TODO: when printing (recursively only?) implicitly filter entries at "higher"
+// directories i.e. if the tree structure is src/commands/this/that and ls-file
+// is executed from src/commands/this then only entries in this and this/that
+// should be printed
+
 /// each line of content is of the form
 /// `[filemode][SP][filename]\0[hash-bytes]`
 /// where SP is ASCII space (0x20) and where hash-bytes is the SHA-1 hash, a
@@ -118,10 +123,10 @@ pub fn print_tree_object(
         let entry_obj = GitObject::read(hash.as_str())?;
         let kind = &entry_obj.kind;
 
+        let path = create_file_name(&path_part, filename);
+
         // 6. if name_only then only print the name :)
         if args.name_only {
-            let path = create_file_name(&path_part, filename);
-
             if *kind == GitObjectType::Tree && args.recurse {
                 print_tree_object(args, entry_obj, Some(path))?;
             } else {
@@ -131,7 +136,6 @@ pub fn print_tree_object(
             continue;
         }
 
-        let path = create_file_name(&path_part, filename);
         if *kind == GitObjectType::Tree && args.recurse {
             print_tree_object(args, entry_obj, Some(path))?;
         } else {
