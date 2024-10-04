@@ -12,6 +12,7 @@ pub(crate) mod config;
 pub(crate) mod hash_object;
 pub(crate) mod init;
 pub(crate) mod ls_tree;
+pub(crate) mod write_tree;
 
 #[derive(Debug, Parser)]
 pub(crate) struct Git {
@@ -31,6 +32,8 @@ pub(crate) enum Commands {
     Config(ConfigArgs),
     /// List the contents of a tree object
     LsTree(LsTreeArgs),
+    /// Create a tree object from the current index
+    WriteTree,
 }
 
 pub type GitResult<T> = Result<T, GitError>;
@@ -46,5 +49,10 @@ pub(crate) enum GitError {
     Io {
         #[from]
         source: io::Error,
+    },
+    #[error("hex conversion error")]
+    HexConversionError {
+        #[from]
+        source: hex::FromHexError,
     },
 }

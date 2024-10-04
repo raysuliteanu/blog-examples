@@ -1,18 +1,19 @@
-use crate::commands::{GitCommandResult, GitResult};
+use crate::commands::{GitCommandResult, GitError, GitResult};
 use crate::util;
 use clap::Args;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
-use log::debug;
+use log::{debug, trace};
 use sha1::{Digest, Sha1};
 use std::ffi::OsString;
 use std::fs::File;
+use std::hash::Hash;
 use std::io::{stdin, BufWriter, Write};
 use std::path::PathBuf;
 use std::{fs, io};
-use tempfile::{Builder, NamedTempFile};
+use tempfile::NamedTempFile;
 
-#[derive(Debug, Args)]
+#[derive(Debug, Args, Default)]
 pub(crate) struct HashObjectArgs {
     #[arg(short = 't', default_value = "blob")]
     pub(crate) obj_type: String,
@@ -45,7 +46,11 @@ pub(crate) fn hash_object_command(args: HashObjectArgs) -> GitCommandResult {
             .map(PathBuf::from)
             .map(File::open)
             .filter_map(Result::ok)
-            .try_for_each(|mut f| hash_object(&args, &mut f))?;
+            .try_for_each(|mut f| {
+                let hash = hash_object(&args, &mut f)?;
+                println!("{hash}");
+                Ok::<(), GitError>(())
+            })?;
     } else {
         unimplemented!("args not supported: {:?}", args);
     };
@@ -53,8 +58,8 @@ pub(crate) fn hash_object_command(args: HashObjectArgs) -> GitCommandResult {
     Ok(())
 }
 
-fn hash_object_stdin(args: &HashObjectArgs) -> GitCommandResult {
-    let mut temp_file = make_temp_file()?;
+fn hash_object_stdin(args: &HashObjectArgs) -> GitResult<String> {
+    let mut temp_file = util::make_temp_file()?;
     let mut stdin = stdin();
 
     std::io::copy(&mut stdin, &mut temp_file)?;
@@ -62,14 +67,18 @@ fn hash_object_stdin(args: &HashObjectArgs) -> GitCommandResult {
     hash_object(args, &mut temp_file.reopen()?)
 }
 
-fn hash_object(args: &HashObjectArgs, input: &mut File) -> GitCommandResult {
-    let output = make_temp_file()?;
-    let hash = encode_content(input, &output)?;
+pub(crate) fn hash_object(args: &HashObjectArgs, input: &mut File) -> GitResult<String> {
+    trace!("hash_object({:?}, {:?})", args, input.metadata()?);
+    let output = util::make_temp_file()?;
+    let hash = encode_content(args, input, &output)?;
 
     if args.write_to_db {
         let obj_dir = format!("{}/{}", util::get_git_object_dir().display(), &hash[..2]);
+
+        trace!("ensuring {obj_dir} exists");
         fs::create_dir_all(&obj_dir)?;
         assert!(PathBuf::from(&obj_dir).exists());
+
         let to = format!("{}/{}", &obj_dir, &hash[2..]);
         let path = &output.path();
         assert!(path.exists());
@@ -77,26 +86,23 @@ fn hash_object(args: &HashObjectArgs, input: &mut File) -> GitCommandResult {
         fs::rename(path, to)?;
     }
 
-    println!("{hash}");
-
-    Ok(())
+    Ok(hash)
 }
 
-fn make_temp_file() -> GitResult<NamedTempFile> {
-    let temp_file = Builder::new().prefix("rg").suffix(".tmp").tempfile()?;
-    debug!("temp file: {:?}", temp_file.path());
-    Ok(temp_file)
-}
-
-fn encode_content(input: &mut File, output: &NamedTempFile) -> GitResult<String> {
+fn encode_content(
+    args: &HashObjectArgs,
+    input: &mut File,
+    output: &NamedTempFile,
+) -> GitResult<String> {
     let writer = BufWriter::new(output);
     let mut hasher = HashObjectWriter::new(writer);
 
     let len = input.metadata()?.len();
-    let header = format!("blob {}\0", len);
-    debug!("header: '{}'", header);
+    let header = format!("{} {}\0", args.obj_type, len);
+    debug!("encode_content: file header '{}'", header);
     write!(hasher, "{}", &header)?;
 
+    trace!("copying content");
     std::io::copy(input, &mut hasher)?;
 
     Ok(hash(hasher))
@@ -116,11 +122,11 @@ impl<W: Write> HashObjectWriter<W> {
     }
 }
 
-    fn hash<W: Write>(how: HashObjectWriter<W>) -> String {
-        let _ = how.encoder.finish();
-        let sha1 = how.hasher.finalize();
-        hex::encode(sha1)
-    }
+fn hash<W: Write>(how: HashObjectWriter<W>) -> String {
+    let _ = how.encoder.finish();
+    let sha1 = how.hasher.finalize();
+    dbg!(hex::encode(sha1))
+}
 
 impl<W: Write> Write for HashObjectWriter<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
@@ -133,4 +139,3 @@ impl<W: Write> Write for HashObjectWriter<W> {
         Ok(())
     }
 }
-

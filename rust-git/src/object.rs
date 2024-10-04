@@ -82,7 +82,7 @@ impl From<&str> for GitObjectType {
             "blob" => GitObjectType::Blob,
             "tree" => GitObjectType::Tree,
             "commit" => GitObjectType::Commit,
-            _ => panic!(),
+            _ => panic!("trying to convert '{}' to a GitObjectType", value),
         }
     }
 }

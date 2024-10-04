@@ -6,6 +6,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 use std::{env, path};
+use tempfile::{Builder, NamedTempFile};
 
 pub(crate) const GIT_DEFAULT_BRANCH_NAME: &str = "master";
 pub(crate) const GIT_DIR_NAME: &str = ".git";
@@ -129,4 +130,10 @@ pub(crate) fn find_object_file(obj_id: &str) -> GitResult<PathBuf> {
     debug!("found {:?}", file);
 
     Ok(file)
+}
+
+pub(crate) fn make_temp_file() -> GitResult<NamedTempFile> {
+    let temp_file = Builder::new().prefix("rg").suffix(".tmp").tempfile()?;
+    debug!("temp file: {:?}", temp_file.path());
+    Ok(temp_file)
 }
