@@ -1,9 +1,9 @@
 use crate::commands::{GitError, GitResult};
 use lazy_static::lazy_static;
 use log::debug;
+use std::env;
 use std::ffi::OsString;
 use std::path::PathBuf;
-use std::env;
 use tempfile::{Builder, NamedTempFile};
 
 pub(crate) const GIT_DEFAULT_BRANCH_NAME: &str = "master";

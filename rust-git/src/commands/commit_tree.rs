@@ -31,7 +31,7 @@ pub(crate) struct CommitTreeArgs {
 pub(crate) fn commit_tree_command(args: CommitTreeArgs) -> GitCommandResult {
     // make sure tree exists
     let tree = object::GitObject::read(args.tree.as_str())?;
-    assert_eq!(tree.sha1, args.tree);
+    assert!(tree.sha1.starts_with(args.tree.as_str()));
     let tree_hash = tree.sha1;
 
     let email_default = || GIT_CONFIG.get("user.email").expect("valid user.email");
@@ -48,8 +48,9 @@ pub(crate) fn commit_tree_command(args: CommitTreeArgs) -> GitCommandResult {
     let mut commit: Vec<u8> = Vec::new();
     let mut size = commit.write(format!("tree {}\n", tree_hash).as_bytes())?;
 
-    if let Some(parent) = args.parent {
-        size += commit.write(format!("parent {}\n", parent).as_bytes())?;
+    if let Some(parent_arg) = args.parent {
+        let parent = object::GitObject::read(&parent_arg)?;
+        size += commit.write(format!("parent {}\n", parent.sha1).as_bytes())?;
     }
 
     let epoch = SystemTime::now()
@@ -73,6 +74,8 @@ pub(crate) fn commit_tree_command(args: CommitTreeArgs) -> GitCommandResult {
         )
         .as_bytes(),
     )?;
+
+    size += commit.write("\n".as_bytes())?;
 
     if let Some(message) = args.message {
         size += commit.write(format!("{}\n", message).as_bytes())?;

@@ -15,15 +15,18 @@ pub(crate) struct Commit {
     pub(crate) comment: String,
 }
 
-impl From<GitObject<'_>> for Commit {
+impl From<GitObject> for Commit {
     fn from(object: GitObject) -> Self {
         let body = object.body.unwrap();
         let mut reader = body.reader();
 
-        let tree = get_entry(&mut reader, "tree").unwrap_or_else(|| panic!("invalid commit object"));
+        let tree =
+            get_entry(&mut reader, "tree").unwrap_or_else(|| panic!("invalid commit object"));
         let parent = get_entry(&mut reader, "parent"); // parent is optional, but rarely so
-        let author = get_entry(&mut reader, "author").unwrap_or_else(|| panic!("invalid commit object"));
-        let committer = get_entry(&mut reader, "committer").unwrap_or_else(|| panic!("invalid commit object"));
+        let author =
+            get_entry(&mut reader, "author").unwrap_or_else(|| panic!("invalid commit object"));
+        let committer =
+            get_entry(&mut reader, "committer").unwrap_or_else(|| panic!("invalid commit object"));
 
         let mut comment = String::new();
         let _ = reader.read_to_string(&mut comment);
@@ -45,6 +48,6 @@ fn get_entry(reader: &mut impl BufRead, name: &str) -> Option<String> {
     let mut n = entry.splitn(2, ' ');
     match n.next() {
         Some(e) if e == name => Some(n.next().unwrap().trim().to_string()),
-        _ => None
+        _ => None,
     }
 }
