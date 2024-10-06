@@ -2,11 +2,15 @@ use crate::commands::cat_file;
 use crate::commands::config;
 use crate::commands::hash_object;
 use crate::commands::init;
+use crate::commands::ls_tree;
 use crate::commands::{Commands, Git};
 use clap::Parser;
 use std::process::ExitCode;
 
 mod commands;
+mod commit;
+mod object;
+mod tag;
 mod util;
 
 fn main() -> ExitCode {
@@ -19,12 +23,16 @@ fn main() -> ExitCode {
         Commands::CatFile(args) => cat_file::cat_file_command(args),
         Commands::HashObject(args) => hash_object::hash_object_command(args),
         Commands::Config(args) => config::config_command(args),
+        Commands::LsTree(args) => ls_tree::ls_tree_command(args),
     };
 
-    if result.is_ok() {
-        ExitCode::from(0)
-    } else {
-        eprintln!("{}", result.err().unwrap());
-        ExitCode::from(1)
-    }
+    let code = match result {
+        Ok(_) => 0,
+        Err(e) => {
+            eprintln!("{e}");
+            128
+        }
+    };
+
+    ExitCode::from(code)
 }

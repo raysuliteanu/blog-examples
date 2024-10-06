@@ -4,11 +4,10 @@ use clap::Args;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 use log::debug;
-use sha1::digest::FixedOutputReset;
 use sha1::{Digest, Sha1};
 use std::ffi::OsString;
 use std::fs::File;
-use std::io::{stdin, Write};
+use std::io::{stdin, BufWriter, Write};
 use std::path::PathBuf;
 use std::{fs, io};
 use tempfile::{Builder, NamedTempFile};
@@ -64,21 +63,18 @@ fn hash_object_stdin(args: &HashObjectArgs) -> GitCommandResult {
 }
 
 fn hash_object(args: &HashObjectArgs, input: &mut File) -> GitCommandResult {
-    let temp_file = &make_temp_file()?;
-
-    let mut hash_writer = HashObjectWriter::new(temp_file);
-
-    encode_content(input, &mut hash_writer)?;
-
-    let hash = hash_writer.hash();
+    let output = make_temp_file()?;
+    let hash = encode_content(input, &output)?;
 
     if args.write_to_db {
         let obj_dir = format!("{}/{}", util::get_git_object_dir().display(), &hash[..2]);
         fs::create_dir_all(&obj_dir)?;
-        let from = temp_file.path().display().to_string();
+        assert!(PathBuf::from(&obj_dir).exists());
         let to = format!("{}/{}", &obj_dir, &hash[2..]);
-        debug!("moving {} to {}", from, to);
-        fs::rename(from, to)?;
+        let path = &output.path();
+        assert!(path.exists());
+        debug!("moving {} to {}", path.display(), to);
+        fs::rename(path, to)?;
     }
 
     println!("{hash}");
@@ -92,44 +88,44 @@ fn make_temp_file() -> GitResult<NamedTempFile> {
     Ok(temp_file)
 }
 
-fn encode_content<W: Write>(input: &mut File, writer: W) -> GitResult<()> {
-    let mut encoding_writer = EncodingWriter::new(writer);
+fn encode_content(input: &mut File, output: &NamedTempFile) -> GitResult<String> {
+    let writer = BufWriter::new(output);
+    let mut hasher = HashObjectWriter::new(writer);
 
     let len = input.metadata()?.len();
     let header = format!("blob {}\0", len);
     debug!("header: '{}'", header);
-    write!(encoding_writer, "{}", &header)?;
+    write!(hasher, "{}", &header)?;
 
-    std::io::copy(input, &mut encoding_writer)?;
+    std::io::copy(input, &mut hasher)?;
 
-    encoding_writer.finalize()?;
-
-    Ok(())
+    Ok(hash(hasher))
 }
 
 struct HashObjectWriter<W: Write> {
+    encoder: ZlibEncoder<W>,
     hasher: Sha1,
-    writer: W,
 }
 
 impl<W: Write> HashObjectWriter<W> {
     fn new(writer: W) -> Self {
         HashObjectWriter {
             hasher: Sha1::new(),
-            writer,
+            encoder: ZlibEncoder::new(writer, Compression::default()),
         }
     }
+}
 
-    fn hash(&mut self) -> String {
-        let sha1 = self.hasher.finalize_fixed_reset();
+    fn hash<W: Write>(how: HashObjectWriter<W>) -> String {
+        let _ = how.encoder.finish();
+        let sha1 = how.hasher.finalize();
         hex::encode(sha1)
     }
-}
 
 impl<W: Write> Write for HashObjectWriter<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.hasher.update(buf);
-        let n = self.writer.write(buf)?;
+        let n = self.encoder.write(buf)?;
         Ok(n)
     }
 
@@ -138,28 +134,3 @@ impl<W: Write> Write for HashObjectWriter<W> {
     }
 }
 
-struct EncodingWriter<W: Write> {
-    encoder: ZlibEncoder<W>,
-}
-
-impl<W: Write> EncodingWriter<W> {
-    fn new(writer: W) -> Self {
-        EncodingWriter {
-            encoder: ZlibEncoder::new(writer, Compression::default()),
-        }
-    }
-
-    fn finalize(&mut self) -> io::Result<()> {
-        self.encoder.try_finish()
-    }
-}
-
-impl<W: Write> Write for EncodingWriter<W> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.encoder.write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.encoder.flush()
-    }
-}
