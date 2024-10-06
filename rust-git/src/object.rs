@@ -3,30 +3,42 @@ use crate::util::{bytes_to_string, find_object_file, u8_slice_to_usize};
 use flate2::bufread::ZlibDecoder;
 use log::trace;
 use std::fmt::{Display, Formatter};
+use std::fs;
 use std::io::{BufRead, BufReader, Read};
 
-pub(crate) struct GitObject<'a> {
+pub(crate) struct GitObject {
     pub(crate) kind: GitObjectType,
-    pub(crate) sha1: &'a str,
+    pub(crate) sha1: String,
     pub(crate) size: usize,
     pub(crate) body: Option<Vec<u8>>,
 }
 
-impl GitObject<'_> {
+impl GitObject {
     pub(crate) fn read(obj_id: &str) -> GitResult<GitObject> {
         trace!("read({obj_id})");
-        let path = find_object_file(obj_id)?;
-        let file = std::fs::File::open(path)?;
-        let reader = BufReader::new(file);
+        let path = &find_object_file(obj_id)?;
+        let reader = BufReader::new(fs::File::open(path)?);
         let contents = GitObject::decode_obj_content(reader)?;
         let mut header_and_body = contents.splitn(2, |b| *b == 0);
         let header = header_and_body.next().unwrap();
         let body = header_and_body.next().unwrap();
         let (obj_type, size) = GitObject::get_object_header(header)?;
 
+        let file_part = path.file_name().unwrap();
+        let file_part = file_part.to_string_lossy();
+        let mut parent_part = path
+            .parent()
+            .unwrap()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        parent_part.push_str(&file_part);
+
         Ok(GitObject {
             kind: obj_type.into(),
-            sha1: obj_id,
+            sha1: parent_part,
             size,
             body: Some(body.to_vec()),
         })
@@ -82,7 +94,7 @@ impl From<&str> for GitObjectType {
             "blob" => GitObjectType::Blob,
             "tree" => GitObjectType::Tree,
             "commit" => GitObjectType::Commit,
-            _ => panic!(),
+            _ => panic!("trying to convert '{}' to a GitObjectType", value),
         }
     }
 }

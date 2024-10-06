@@ -5,8 +5,8 @@ use std::io::Read;
 use std::path::PathBuf;
 
 pub(crate) struct Tag {
-    pub name: String,
-    pub path: PathBuf,
+    _name: String,
+    _path: PathBuf,
     pub obj_id: String,
 }
 
@@ -19,8 +19,8 @@ impl Tag {
                 let mut obj_id = String::new();
                 match file.read_to_string(&mut obj_id) {
                     Ok(_) => Some(Tag {
-                        name: name.to_string(),
-                        path: get_git_tags_dir().join(name),
+                        _name: name.to_string(),
+                        _path: get_git_tags_dir().join(name),
                         obj_id: obj_id.trim().to_string(),
                     }),
                     Err(_) => None,

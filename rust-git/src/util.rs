@@ -1,11 +1,10 @@
 use crate::commands::{GitError, GitResult};
 use lazy_static::lazy_static;
 use log::debug;
+use std::env;
 use std::ffi::OsString;
-use std::fs::File;
-use std::io::Read;
 use std::path::PathBuf;
-use std::{env, path};
+use tempfile::{Builder, NamedTempFile};
 
 pub(crate) const GIT_DEFAULT_BRANCH_NAME: &str = "master";
 pub(crate) const GIT_DIR_NAME: &str = ".git";
@@ -44,13 +43,13 @@ pub(crate) fn get_git_dirs(
     separate_git_dir: Option<OsString>,
 ) -> GitResult<(PathBuf, Option<PathBuf>)> {
     let git_parent_dir = if let Some(dir) = directory {
-        path::absolute(dir.to_str().unwrap())?
+        std::fs::canonicalize(dir.to_str().unwrap())?
     } else {
         env::current_dir()?
     };
 
     let separate_parent_dir =
-        separate_git_dir.map(|dir| path::absolute(dir.to_str().unwrap()).unwrap());
+        separate_git_dir.map(|dir| std::fs::canonicalize(dir.to_str().unwrap()).unwrap());
 
     Ok((git_parent_dir, separate_parent_dir))
 }
@@ -129,4 +128,10 @@ pub(crate) fn find_object_file(obj_id: &str) -> GitResult<PathBuf> {
     debug!("found {:?}", file);
 
     Ok(file)
+}
+
+pub(crate) fn make_temp_file() -> GitResult<NamedTempFile> {
+    let temp_file = Builder::new().prefix("rg").suffix(".tmp").tempfile()?;
+    debug!("temp file: {:?}", temp_file.path());
+    Ok(temp_file)
 }
