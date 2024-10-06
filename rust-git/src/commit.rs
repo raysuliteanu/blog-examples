@@ -7,12 +7,12 @@ use std::io::{BufRead, Read};
 // have any parents); the author/committer information (which uses your user.name and user.email
 // configuration settings and a timestamp); a blank line, and then the commit message.
 pub(crate) struct Commit {
-    pub(crate) sha1: String,
+    _sha1: String,
     pub(crate) tree: String,
-    pub(crate) parent: Option<String>,
-    pub(crate) author: String,
-    pub(crate) committer: String,
-    pub(crate) comment: String,
+    _parent: Option<String>,
+    _author: String,
+    _committer: String,
+    _comment: String,
 }
 
 impl From<GitObject> for Commit {
@@ -32,12 +32,12 @@ impl From<GitObject> for Commit {
         let _ = reader.read_to_string(&mut comment);
 
         Self {
-            sha1: object.sha1.to_string(),
+            _sha1: object.sha1.to_string(),
             tree,
-            parent,
-            author,
-            committer,
-            comment,
+            _parent: parent,
+            _author: author,
+            _committer: committer,
+            _comment: comment,
         }
     }
 }
