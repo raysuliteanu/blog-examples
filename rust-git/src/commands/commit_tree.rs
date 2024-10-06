@@ -38,12 +38,14 @@ pub(crate) fn commit_tree_command(args: CommitTreeArgs) -> GitCommandResult {
     let user_default = || GIT_CONFIG.get("user.name").expect("valid user.name");
 
     let author_email = GIT_CONFIG.get("author.email").unwrap_or_else(email_default);
-    let author_name = GIT_CONFIG.get("author.email").unwrap_or_else(user_default);
+    let author_name = GIT_CONFIG.get("author.name").unwrap_or_else(user_default);
 
     let committer_email = GIT_CONFIG
         .get("committer.email")
         .unwrap_or_else(email_default);
-    let committer_name = GIT_CONFIG.get("author.email").unwrap_or_else(user_default);
+    let committer_name = GIT_CONFIG
+        .get("committer.name")
+        .unwrap_or_else(user_default);
 
     let mut commit: Vec<u8> = Vec::new();
     let mut size = commit.write(format!("tree {}\n", tree_hash).as_bytes())?;
