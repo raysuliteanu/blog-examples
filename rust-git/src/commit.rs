@@ -7,12 +7,12 @@ use std::io::{BufRead, Read};
 // have any parents); the author/committer information (which uses your user.name and user.email
 // configuration settings and a timestamp); a blank line, and then the commit message.
 pub(crate) struct Commit {
-    sha1: String,
+    pub(crate) sha1: String,
     pub(crate) tree: String,
-    parent: String,
-    author: String,
-    committer: String,
-    comment: String,
+    pub(crate) parent: Option<String>,
+    pub(crate) author: String,
+    pub(crate) committer: String,
+    pub(crate) comment: String,
 }
 
 impl From<GitObject<'_>> for Commit {
@@ -20,10 +20,10 @@ impl From<GitObject<'_>> for Commit {
         let body = object.body.unwrap();
         let mut reader = body.reader();
 
-        let tree = get_entry(&mut reader, "tree");
-        let parent = get_entry(&mut reader, "parent");
-        let author = get_entry(&mut reader, "author");
-        let committer = get_entry(&mut reader, "committer");
+        let tree = get_entry(&mut reader, "tree").unwrap_or_else(|| panic!("invalid commit object"));
+        let parent = get_entry(&mut reader, "parent"); // parent is optional, but rarely so
+        let author = get_entry(&mut reader, "author").unwrap_or_else(|| panic!("invalid commit object"));
+        let committer = get_entry(&mut reader, "committer").unwrap_or_else(|| panic!("invalid commit object"));
 
         let mut comment = String::new();
         let _ = reader.read_to_string(&mut comment);
@@ -39,10 +39,12 @@ impl From<GitObject<'_>> for Commit {
     }
 }
 
-fn get_entry(reader: &mut impl BufRead, name: &str) -> String {
+fn get_entry(reader: &mut impl BufRead, name: &str) -> Option<String> {
     let mut entry = String::new();
     let _ = reader.read_line(&mut entry);
     let mut n = entry.splitn(2, ' ');
-    assert_eq!(n.next(), Some(name));
-    n.next().unwrap().trim().to_string()
+    match n.next() {
+        Some(e) if e == name => Some(n.next().unwrap().trim().to_string()),
+        _ => None
+    }
 }

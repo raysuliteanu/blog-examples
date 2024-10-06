@@ -2,7 +2,7 @@ use crate::commands::hash_object::HashObjectArgs;
 use crate::commands::{hash_object, GitCommandResult, GitError, GitResult};
 use crate::util;
 use log::trace;
-use sha1::Digest;
+use std::cmp::Ordering;
 use std::fs::DirEntry;
 use std::io::Write;
 use std::os::unix::fs::MetadataExt;
@@ -47,17 +47,41 @@ fn write_tree(path: PathBuf) -> GitResult<String> {
             }
 
             let sha1 = write_tree(path.join(&name))?;
-            make_tree_entry(name, entry, sha1, true)?
+            make_tree_entry(name, entry, sha1)?
         } else {
             let mut file = std::fs::File::open(path.join(&name))?;
             let sha1 = hash_object::hash_object(&make_hash_object_args("blob"), &mut file)?;
-            make_tree_entry(name, entry, sha1, false)?
+            make_tree_entry(name, entry, sha1)?
         };
 
         tree.entries.push(tree_entry);
     }
 
-    tree.entries.sort_by(|x, y| x.name.cmp(&y.name));
+    // git sort algo: https://github.com/git/git/blob/master/tree.c#L101
+
+    tree.entries.sort_by(|x, y| {
+        let common_len = std::cmp::min(x.name.len(), y.name.len());
+        match x.name[..common_len].cmp(&y.name[..common_len]) {
+            Ordering::Equal => {
+                let x_name = x.name.clone();
+                let x = if x.mode == "40000" {
+                    x_name + "/"
+                } else {
+                    x_name
+                };
+
+                let y_name = y.name.clone();
+                let y = if y.mode == "40000" {
+                    y_name + "/"
+                } else {
+                    y_name
+                };
+
+                x.cmp(&y)
+            }
+            o => o,
+        }
+    });
 
     let mut entries: Vec<u8> = Vec::new();
     let mut size = 0;
@@ -93,13 +117,14 @@ fn make_tree_entry(
     name: String,
     entry: DirEntry,
     sha1: String,
-    is_tree: bool,
 ) -> GitResult<TreeEntry> {
     let raw_mode = entry.metadata()?.mode();
     let mode = mode_to_string(raw_mode);
     Ok(TreeEntry { name, mode, sha1 })
 }
 
+/// https://stackoverflow.com/questions/737673/how-to-read-the-mode-field-of-git-ls-trees-output/8347325
+///
 /// 32-bit mode, split into (high to low bits)
 ///
 /// 4-bit object type
@@ -117,13 +142,10 @@ fn make_tree_entry(
 /// 1000000111101101 (100 755): Regular executable file
 /// 1010000000000000 (120 000): Symbolic link
 /// 1110000000000000 (160 000): Gitlink
-///
-/// https://stackoverflow.com/questions/737673/how-to-read-the-mode-field-of-git-ls-trees-output/8347325
-
 fn mode_to_string(mode: u32) -> String {
     match mode & 0o170000 {
         // if the type is dir or symlink, just use that; don't care about further permissions
-        0o040000 | 0o120000 => format!("{:0>6o}", mode & 0o170000),
+        0o040000 | 0o120000 => format!("{:o}", mode & 0o170000),
         // regular files, use the whole thing
         0o100000 => format!("{:0>6o}", mode),
         // everything else is invalid (e.g. block/char devices, pipes, etc)
@@ -137,7 +159,7 @@ mod tests {
 
     #[test]
     fn test_mode_to_string() {
-        assert_eq!("040000", mode_to_string(0o040755));
+        assert_eq!("40000", mode_to_string(0o040755));
         assert_eq!("120000", mode_to_string(0o120000));
         assert_eq!("100755", mode_to_string(0o100755));
         assert_eq!("100444", mode_to_string(0o100444));

@@ -47,7 +47,7 @@ pub(crate) fn ls_tree(obj_id: &String, args: &LsTreeArgs) -> GitCommandResult {
         Ok(obj) => match obj.kind {
             GitObjectType::Tree => {
                 // format and print tree obj body
-                print_tree_object(&args, obj, None)
+                print_tree_object(args, obj, None)
             }
             GitObjectType::Commit => {
                 // get tree object of commit and print that
@@ -60,7 +60,6 @@ pub(crate) fn ls_tree(obj_id: &String, args: &LsTreeArgs) -> GitCommandResult {
                     obj_id: args.tree_ish.to_string(),
                 })
             }
-            _ => unreachable!("due to other branches"),
         },
         Err(_) => {
             debug!("cannot read object file for id '{obj_id}'; trying as a tag ...");

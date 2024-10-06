@@ -7,7 +7,6 @@ use log::{debug, trace};
 use sha1::{Digest, Sha1};
 use std::ffi::OsString;
 use std::fs::File;
-use std::hash::Hash;
 use std::io::{stdin, BufWriter, Write};
 use std::path::PathBuf;
 use std::{fs, io};
@@ -125,7 +124,7 @@ impl<W: Write> HashObjectWriter<W> {
 fn hash<W: Write>(how: HashObjectWriter<W>) -> String {
     let _ = how.encoder.finish();
     let sha1 = how.hasher.finalize();
-    dbg!(hex::encode(sha1))
+    hex::encode(sha1)
 }
 
 impl<W: Write> Write for HashObjectWriter<W> {
