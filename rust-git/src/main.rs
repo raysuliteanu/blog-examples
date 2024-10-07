@@ -27,6 +27,7 @@ fn main() -> ExitCode {
         Commands::LsTree(args) => ls_tree::ls_tree_command(args),
         Commands::WriteTree => write_tree::write_tree_command(),
         Commands::CommitTree(args) => commit_tree::commit_tree_command(args),
+        Commands::Clone(_) => todo!(),
     };
 
     let code = match result {
