@@ -1,4 +1,0 @@
-[workspace]
-members = ["echo", "unique-id", "broadcast"]
-package = { version = "0.1.0", edition = "2021" }
-resolver = "2"
