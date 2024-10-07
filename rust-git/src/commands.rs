@@ -1,4 +1,5 @@
 use crate::commands::cat_file::CatFileArgs;
+use crate::commands::clone::CloneArgs;
 use crate::commands::commit_tree::CommitTreeArgs;
 use crate::commands::config::ConfigArgs;
 use crate::commands::hash_object::HashObjectArgs;
@@ -9,6 +10,7 @@ use std::io;
 use thiserror::Error;
 
 pub(crate) mod cat_file;
+pub(crate) mod clone;
 pub(crate) mod commit_tree;
 pub(crate) mod config;
 pub(crate) mod hash_object;
@@ -37,6 +39,7 @@ pub(crate) enum Commands {
     /// Create a tree object from the current index
     WriteTree,
     CommitTree(CommitTreeArgs),
+    Clone(CloneArgs),
 }
 
 pub type GitResult<T> = Result<T, GitError>;
