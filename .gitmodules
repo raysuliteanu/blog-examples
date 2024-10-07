@@ -1,3 +1,0 @@
-[submodule "rust-jepsen/maelstrom"]
-	path = rust-jepsen/maelstrom
-	url = git@github.com:jepsen-io/maelstrom.git
