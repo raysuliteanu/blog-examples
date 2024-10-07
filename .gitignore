@@ -72,3 +72,9 @@ rust-project.json
 
 .fleet/
 
+.classpath
+.project
+.settings/
+
+**/*.patch
+
