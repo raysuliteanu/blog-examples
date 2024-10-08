@@ -1,7 +1,0 @@
-spring:
-  threads:
-    virtual:
-      enabled: true
-
-  application:
-    name: observability-demo
