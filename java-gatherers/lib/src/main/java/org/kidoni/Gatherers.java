@@ -5,24 +5,35 @@ import java.util.List;
 import java.util.function.Predicate;
 import java.util.stream.Gatherer;
 
+@SuppressWarnings("preview")
 public abstract class Gatherers {
 
-    public static <T> Gatherer<T, List<T>, List<T>> split(Predicate<? super T> predicate) {
-        return Gatherer.<T, List<T>, List<T>>ofSequential(
-                ArrayList::new,
-                (list, element, downstream) -> {
+    // see https://doc.rust-lang.org/std/primitive.slice.html#method.split
+    public static <T> Gatherer<T, ?, List<T>> split(Predicate<? super T> predicate) {
+        class SplitState {
+            final List<T> list = new ArrayList<>();
+            boolean did_push;
+        }
+
+        return Gatherer.<T, SplitState, List<T>>ofSequential(
+                SplitState::new,
+                (state, element, downstream) -> {
                     if (predicate.test(element)) {
-                        List<T> copy = List.copyOf(list);
-                        list.clear();
-                        return downstream.push(copy);
+                        List<T> copy = List.copyOf(state.list);
+                        state.list.clear();
+                        downstream.push(copy);
+                        state.did_push = true;
+                    }
+                    else {
+                        state.list.add(element);
+                        state.did_push = false;
                     }
 
-                    list.add(element);
                     return true;
                 },
-                (elements, downstream) -> {
-                    if (!elements.isEmpty()) {
-                        downstream.push(List.copyOf(elements));
+                (state, downstream) -> {
+                    if (state.did_push || !state.list.isEmpty()) {
+                        downstream.push(List.copyOf(state.list));
                     }
                 });
     }
