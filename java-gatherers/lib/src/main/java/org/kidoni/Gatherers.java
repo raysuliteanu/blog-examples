@@ -52,6 +52,10 @@ public abstract class Gatherers {
             int splits = 1;
         }
 
+        if (n < 1) {
+            throw new IllegalArgumentException("n must be greater than 0");
+        }
+
         return Gatherer.ofSequential(
                 SplitState::new,
                 (state, element, downstream) -> {
