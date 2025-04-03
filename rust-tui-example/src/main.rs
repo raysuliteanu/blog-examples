@@ -7,11 +7,13 @@ use std::path::Path;
 
 use chrono::{DateTime, Local};
 use crossterm::event::KeyCode;
-use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Flex, Layout, Margin};
 use ratatui::prelude::{Color, Modifier, Style, Text};
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap};
+use ratatui::widgets::{
+    Block, Borders, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap,
+};
+use ratatui::Frame;
 
 mod tui;
 
@@ -50,11 +52,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     tui.enter()?; // Starts event handler, enters raw mode, enters alternate screen
 
     loop {
-        tui.draw(|f| { // Deref allows calling `tui.terminal.draw`
+        tui.draw(|f| {
+            // Deref allows calling `tui.terminal.draw`
             ui(f, &mut file_data);
         })?;
 
-        if let Some(evt) = tui.next().await { // `tui.next().await` blocks till next event
+        if let Some(evt) = tui.next().await {
+            // `tui.next().await` blocks till next event
             let some_action = map_event(evt);
             file_data.action = some_action;
 
@@ -70,7 +74,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn is_quit_action(file_data: &mut FileData) -> bool {
-    file_data.action.is_some_and(|action| action == Action::Quit)
+    file_data
+        .action
+        .is_some_and(|action| action == Action::Quit)
 }
 
 fn get_file_data(args: Vec<String>) -> Result<FileData, Box<dyn Error>> {
@@ -81,8 +87,9 @@ fn get_file_data(args: Vec<String>) -> Result<FileData, Box<dyn Error>> {
         if file_path.exists() && file_path.is_file() {
             let file = File::open(file_path).unwrap();
             let reader = BufReader::new(file);
-            let data : Vec<Line> = reader.lines()
-                .map(|line| { Line::from(line.unwrap()) })
+            let data: Vec<Line> = reader
+                .lines()
+                .map(|line| Line::from(line.unwrap()))
                 .collect::<Vec<_>>();
 
             let scroll_state = ScrollState {
@@ -111,41 +118,28 @@ fn get_file_data(args: Vec<String>) -> Result<FileData, Box<dyn Error>> {
 fn map_event(event: tui::Event) -> Option<Action> {
     if let tui::Event::Key(key) = event {
         return match key.code {
-            KeyCode::Up => {
-                Some(Action::ScrollUp)
-            }
-            KeyCode::Down => {
-                Some(Action::ScrollDown)
-            }
-            KeyCode::Home => {
-                Some(Action::Home)
-            }
-            KeyCode::End => {
-                Some(Action::End)
-            }
-            KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => {
-                Some(Action::Quit)
-            }
-            _ => {
-                None
-            }
+            KeyCode::Up => Some(Action::ScrollUp),
+            KeyCode::Down => Some(Action::ScrollDown),
+            KeyCode::Home => Some(Action::Home),
+            KeyCode::End => Some(Action::End),
+            KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => Some(Action::Quit),
+            _ => None,
         };
     }
     None
 }
 
 fn ui(frame: &mut Frame, file_data: &mut FileData) {
-    let area = frame.size();
+    let area = frame.area();
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(1),
-            Constraint::Length(3),
-        ])
+        .constraints([Constraint::Min(1), Constraint::Length(3)])
         .split(area);
 
-    let style_blue_bold = Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD);
+    let style_blue_bold = Style::default()
+        .fg(Color::Blue)
+        .add_modifier(Modifier::BOLD);
 
     let main_content_block = Block::new()
         .borders(Borders::all())
@@ -157,7 +151,7 @@ fn ui(frame: &mut Frame, file_data: &mut FileData) {
 
     let text = file_data.data.to_vec();
     let main_content = Paragraph::new(text)
-        .scroll((file_data.scroll_state.position  as u16, 0))
+        .scroll((file_data.scroll_state.position as u16, 0))
         .block(main_content_block)
         .wrap(Wrap { trim: false }); // 'trim: false' preserves indenting i.e. no strip whitespace
     frame.render_widget(main_content, chunks[0]);
@@ -167,7 +161,10 @@ fn ui(frame: &mut Frame, file_data: &mut FileData) {
         scrollbar,
         chunks[0].inner(
             // using an inner vertical margin of 1 unit makes the scrollbar inside the block
-            &Margin { vertical: 1, horizontal: 0 }
+            Margin {
+                vertical: 1,
+                horizontal: 0,
+            },
         ),
         &mut file_data.scroll_state.state,
     );
@@ -186,7 +183,11 @@ fn ui(frame: &mut Frame, file_data: &mut FileData) {
 
     let system_time = file_data.metadata.created().unwrap();
     let local_time: DateTime<Local> = system_time.into();
-    let file_details = format!("Created: {} Length: {}", local_time.format("%d-%m-%Y %H:%M"), file_data.metadata.len());
+    let file_details = format!(
+        "Created: {} Length: {}",
+        local_time.format("%d-%m-%Y %H:%M"),
+        file_data.metadata.len()
+    );
     let footer_metadata = Text::from(file_details);
     let footer_metadata_paragraph = Paragraph::new(footer_metadata)
         .style(style_blue_bold)
@@ -199,13 +200,11 @@ fn update_scroll_state(file_data: &mut FileData) {
         match action {
             Action::ScrollUp => {
                 file_data.scroll_state.state.prev();
-                file_data.scroll_state.position =
-                    file_data.scroll_state.position.saturating_sub(1);
+                file_data.scroll_state.position = file_data.scroll_state.position.saturating_sub(1);
             }
             Action::ScrollDown => {
                 file_data.scroll_state.state.next();
-                file_data.scroll_state.position =
-                    file_data.scroll_state.position.saturating_add(1);
+                file_data.scroll_state.position = file_data.scroll_state.position.saturating_add(1);
             }
             Action::Home => {
                 file_data.scroll_state.state.first();
@@ -213,7 +212,10 @@ fn update_scroll_state(file_data: &mut FileData) {
             }
             Action::End => {
                 file_data.scroll_state.position = file_data.data.len();
-                let _ = file_data.scroll_state.state.position(file_data.scroll_state.position);
+                let _ = file_data
+                    .scroll_state
+                    .state
+                    .position(file_data.scroll_state.position);
             }
             _ => {}
         }
