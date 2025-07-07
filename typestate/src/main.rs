@@ -1,57 +1,150 @@
-use std::default::Default;
+use std::{default::Default, error::Error};
 
 #[derive(Default, Clone)]
-pub struct Token;
+pub struct Token<'c>(&'c str);
 #[derive(Default, Clone)]
-pub struct Ast;
+pub struct Ast<'c>(&'c str);
 
 #[derive(Default, Clone)]
-pub struct Scanner(&'static str);
+pub struct Scanner<'c>(&'c str);
 #[derive(Default, Clone)]
-pub struct Parser(Vec<Token>);
+pub struct Parser<'c>(Vec<Token<'c>>);
 #[derive(Default, Clone)]
-pub struct Evaluater(Vec<Ast>);
+pub struct Evaluater<'c>(Vec<Ast<'c>>);
 #[derive(Default, Clone)]
 pub struct CompilerResult;
 
 #[derive(Default, Clone)]
 pub struct Compiler<S> {
     stage: S,
+    print_tokens: bool,
+    print_ast: bool,
 }
 
-impl Compiler<Scanner> {
-    pub fn new(source: &'static str) -> Self {
+impl<'compiler> Compiler<Scanner<'compiler>> {
+    pub fn new(source: &'compiler str, print_tokens: bool, print_ast: bool) -> Self {
         Compiler {
             stage: Scanner(source),
+            print_tokens,
+            print_ast,
         }
     }
 
     pub fn scan(&self) -> Compiler<Parser> {
-        let _ = self.stage.0;
+        let source = self.stage.0;
+        println!("scan");
+        let tokens = source
+            .split_whitespace()
+            .map(Token)
+            .collect::<Vec<Token<'_>>>();
+
         Compiler {
-            stage: Parser(Vec::new()),
+            stage: Parser(tokens),
+            print_tokens: self.print_tokens,
+            print_ast: self.print_ast,
         }
     }
 }
 
-impl Compiler<Parser> {
+impl Compiler<Parser<'_>> {
     pub fn parse(&self) -> Compiler<Evaluater> {
-        for _t in &self.stage.0 {}
+        println!("parse");
+        let ast = self
+            .stage
+            .0
+            .iter()
+            .map(|t| Ast(t.0))
+            .collect::<Vec<Ast<'_>>>();
+
         Compiler {
-            stage: Evaluater(Vec::new()),
+            stage: Evaluater(ast),
+            print_tokens: self.print_tokens,
+            print_ast: self.print_ast,
         }
     }
 }
 
-impl Compiler<Evaluater> {
+impl Compiler<Evaluater<'_>> {
     pub fn evaluate(&self) -> Compiler<CompilerResult> {
-        for _t in &self.stage.0 {}
+        println!("evaluate");
+        self.stage
+            .0
+            .iter()
+            .map(|a| a.0)
+            .for_each(|s| println!("{s}"));
+
         Compiler {
             stage: CompilerResult,
+            print_tokens: self.print_tokens,
+            print_ast: self.print_ast,
         }
     }
 }
 
-fn main() {
-    let _compiler = Compiler::new("hello").scan().parse().evaluate();
+impl Compiler<CompilerResult> {
+    pub fn finish(&self) {
+        println!("done");
+    }
+}
+
+struct CompilerBuilder<'b> {
+    source: Option<&'b str>,
+    print_tokens: bool,
+    print_ast: bool,
+}
+
+impl<'b> CompilerBuilder<'b> {
+    pub fn new() -> Self {
+        CompilerBuilder {
+            source: None,
+            print_tokens: false,
+            print_ast: false,
+        }
+    }
+
+    pub fn with_source(&self, source: &'b str) -> Self {
+        CompilerBuilder {
+            source: Some(source),
+            print_tokens: self.print_tokens,
+            print_ast: self.print_ast,
+        }
+    }
+
+    pub fn print_tokens(&self) -> Self {
+        CompilerBuilder {
+            source: self.source,
+            print_tokens: true,
+            print_ast: self.print_ast,
+        }
+    }
+
+    pub fn print_ast(&self) -> Self {
+        CompilerBuilder {
+            source: self.source,
+            print_tokens: self.print_tokens,
+            print_ast: true,
+        }
+    }
+
+    pub fn build(&self) -> Result<Compiler<Scanner<'b>>, Box<dyn Error>> {
+        if let Some(source) = self.source {
+            Ok(Compiler::new(source, self.print_tokens, self.print_ast))
+        } else {
+            todo!("missing source");
+        }
+    }
+}
+
+fn main() -> Result<(), Box<dyn Error>> {
+    CompilerBuilder::new()
+        .with_source("hello world this is a type state example")
+        .print_tokens()
+        .print_ast()
+        .build()?
+        .scan()
+        .parse()
+        .evaluate()
+        .finish();
+
+    Ok(())
 }
