@@ -1,4 +1,4 @@
-use std::{default::Default, error::Error};
+use std::{default::Default, error::Error, marker::PhantomData};
 
 #[derive(Default, Clone)]
 pub struct Token<'c>(&'c str);
@@ -32,7 +32,7 @@ impl<'compiler> Compiler<Scanner<'compiler>> {
 
     pub fn scan(&self) -> Compiler<Parser> {
         let source = self.stage.0;
-        println!("scan");
+        eprintln!("scan");
         let tokens = source
             .split_whitespace()
             .map(Token)
@@ -48,7 +48,7 @@ impl<'compiler> Compiler<Scanner<'compiler>> {
 
 impl Compiler<Parser<'_>> {
     pub fn parse(&self) -> Compiler<Evaluater> {
-        println!("parse");
+        eprintln!("parse");
         let ast = self
             .stage
             .0
@@ -66,7 +66,7 @@ impl Compiler<Parser<'_>> {
 
 impl Compiler<Evaluater<'_>> {
     pub fn evaluate(&self) -> Compiler<CompilerResult> {
-        println!("evaluate");
+        eprintln!("evaluate");
         self.stage
             .0
             .iter()
@@ -83,50 +83,62 @@ impl Compiler<Evaluater<'_>> {
 
 impl Compiler<CompilerResult> {
     pub fn finish(&self) {
-        println!("done");
+        eprintln!("done");
     }
 }
 
-struct CompilerBuilder<'b> {
+#[derive(Default)]
+struct BuilderInit;
+#[derive(Default)]
+struct BuilderSource;
+
+#[derive(Default)]
+struct CompilerBuilder<'b, T> {
     source: Option<&'b str>,
     print_tokens: bool,
     print_ast: bool,
+    marker: PhantomData<T>,
 }
 
-impl<'b> CompilerBuilder<'b> {
+impl<'b> CompilerBuilder<'b, BuilderInit> {
     pub fn new() -> Self {
-        CompilerBuilder {
-            source: None,
-            print_tokens: false,
-            print_ast: false,
-        }
+        CompilerBuilder::default()
     }
+}
 
-    pub fn with_source(&self, source: &'b str) -> Self {
+impl CompilerBuilder<'_, BuilderInit> {
+    pub fn with_source(self, source: &str) -> CompilerBuilder<BuilderSource> {
         CompilerBuilder {
             source: Some(source),
             print_tokens: self.print_tokens,
             print_ast: self.print_ast,
+            marker: PhantomData,
         }
     }
+}
 
-    pub fn print_tokens(&self) -> Self {
+impl<'b, T> CompilerBuilder<'b, T> {
+    pub fn print_tokens(self) -> Self {
         CompilerBuilder {
             source: self.source,
             print_tokens: true,
             print_ast: self.print_ast,
+            marker: PhantomData,
         }
     }
 
-    pub fn print_ast(&self) -> Self {
+    pub fn print_ast(self) -> Self {
         CompilerBuilder {
             source: self.source,
             print_tokens: self.print_tokens,
             print_ast: true,
+            marker: PhantomData,
         }
     }
+}
 
-    pub fn build(&self) -> Result<Compiler<Scanner<'b>>, Box<dyn Error>> {
+impl<'b> CompilerBuilder<'b, BuilderSource> {
+    pub fn build(self) -> Result<Compiler<Scanner<'b>>, Box<dyn Error>> {
         if let Some(source) = self.source {
             Ok(Compiler::new(source, self.print_tokens, self.print_ast))
         } else {
@@ -136,15 +148,13 @@ impl<'b> CompilerBuilder<'b> {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    CompilerBuilder::new()
-        .with_source("hello world this is a type state example")
+    let compiler = CompilerBuilder::new()
         .print_tokens()
+        .with_source("hello world this is a type state example")
         .print_ast()
-        .build()?
-        .scan()
-        .parse()
-        .evaluate()
-        .finish();
+        .build()?;
+
+    compiler.scan().parse().evaluate().finish();
 
     Ok(())
 }
