@@ -1,17 +1,17 @@
 use std::{default::Default, error::Error, marker::PhantomData};
 
-#[derive(Default, Clone)]
+#[derive(Default, Debug)]
 pub struct Token<'c>(&'c str);
-#[derive(Default, Clone)]
+#[derive(Default, Debug)]
 pub struct Ast<'c>(&'c str);
 
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub struct Scanner<'c>(&'c str);
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub struct Parser<'c>(Vec<Token<'c>>);
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub struct Evaluater<'c>(Vec<Ast<'c>>);
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub struct CompilerResult;
 
 #[derive(Default, Clone)]
@@ -36,6 +36,11 @@ impl<'compiler> Compiler<Scanner<'compiler>> {
         let tokens = source
             .split_whitespace()
             .map(Token)
+            .inspect(|t| {
+                if self.print_tokens {
+                    println!("{t:?}");
+                }
+            })
             .collect::<Vec<Token<'_>>>();
 
         Compiler {
@@ -54,6 +59,11 @@ impl Compiler<Parser<'_>> {
             .0
             .iter()
             .map(|t| Ast(t.0))
+            .inspect(|a| {
+                if self.print_ast {
+                    println!("{a:?}");
+                }
+            })
             .collect::<Vec<Ast<'_>>>();
 
         Compiler {
