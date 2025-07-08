@@ -114,9 +114,7 @@ impl<'b> CompilerBuilder<'b, BuilderInit> {
     pub fn new() -> Self {
         CompilerBuilder::default()
     }
-}
 
-impl CompilerBuilder<'_, BuilderInit> {
     pub fn with_source(self, source: &str) -> CompilerBuilder<BuilderSource> {
         CompilerBuilder {
             source: Some(source),
