@@ -10,11 +10,11 @@ pub struct Scanner<'c>(&'c str);
 #[derive(Default)]
 pub struct Parser<'c>(Vec<Token<'c>>);
 #[derive(Default)]
-pub struct Evaluater<'c>(Vec<Ast<'c>>);
+pub struct Evaluator<'c>(Vec<Ast<'c>>);
 #[derive(Default)]
 pub struct CompilerResult;
 
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub struct Compiler<S> {
     stage: S,
     print_tokens: bool,
@@ -52,7 +52,7 @@ impl<'compiler> Compiler<Scanner<'compiler>> {
 }
 
 impl Compiler<Parser<'_>> {
-    pub fn parse(&self) -> Compiler<Evaluater> {
+    pub fn parse(&self) -> Compiler<Evaluator> {
         eprintln!("parse");
         let ast = self
             .stage
@@ -67,14 +67,14 @@ impl Compiler<Parser<'_>> {
             .collect::<Vec<Ast<'_>>>();
 
         Compiler {
-            stage: Evaluater(ast),
+            stage: Evaluator(ast),
             print_tokens: self.print_tokens,
             print_ast: self.print_ast,
         }
     }
 }
 
-impl Compiler<Evaluater<'_>> {
+impl Compiler<Evaluator<'_>> {
     pub fn evaluate(&self) -> Compiler<CompilerResult> {
         eprintln!("evaluate");
         self.stage
