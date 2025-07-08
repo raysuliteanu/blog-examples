@@ -1,4 +1,4 @@
-use std::{default::Default, error::Error, marker::PhantomData};
+use std::{default::Default, marker::PhantomData};
 
 #[derive(Default, Debug)]
 pub struct Token<'c>(&'c str);
@@ -98,7 +98,7 @@ impl Compiler<CompilerResult> {
 }
 
 #[derive(Default)]
-struct BuilderInit;
+struct BuilderNoSource;
 #[derive(Default)]
 struct BuilderSource;
 
@@ -110,8 +110,8 @@ struct CompilerBuilder<'b, T> {
     marker: PhantomData<T>,
 }
 
-impl<'b> CompilerBuilder<'b, BuilderInit> {
-    pub fn new() -> Self {
+impl<'b> CompilerBuilder<'b, BuilderNoSource> {
+    pub fn new() -> CompilerBuilder<'b, BuilderNoSource> {
         CompilerBuilder::default()
     }
 
@@ -128,41 +128,38 @@ impl<'b> CompilerBuilder<'b, BuilderInit> {
 impl<'b, T> CompilerBuilder<'b, T> {
     pub fn print_tokens(self) -> Self {
         CompilerBuilder {
-            source: self.source,
             print_tokens: true,
-            print_ast: self.print_ast,
-            marker: PhantomData,
+            ..self
         }
     }
 
     pub fn print_ast(self) -> Self {
         CompilerBuilder {
-            source: self.source,
-            print_tokens: self.print_tokens,
             print_ast: true,
-            marker: PhantomData,
+            ..self
         }
     }
 }
 
 impl<'b> CompilerBuilder<'b, BuilderSource> {
-    pub fn build(self) -> Result<Compiler<Scanner<'b>>, Box<dyn Error>> {
-        if let Some(source) = self.source {
-            Ok(Compiler::new(source, self.print_tokens, self.print_ast))
-        } else {
-            todo!("missing source");
-        }
+    pub fn build(self) -> Compiler<Scanner<'b>> {
+        Compiler::new(
+            // SAFETY: by type state pattern, can only call build() if `self.source` has been set
+            unsafe { self.source.unwrap_unchecked() },
+            self.print_tokens,
+            self.print_ast,
+        )
     }
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
-    let compiler = CompilerBuilder::new()
+fn main() {
+    CompilerBuilder::new()
         .print_tokens()
         .with_source("hello world this is a type state example")
         .print_ast()
-        .build()?;
-
-    compiler.scan().parse().evaluate().finish();
-
-    Ok(())
+        .build()
+        .scan()
+        .parse()
+        .evaluate()
+        .finish();
 }
